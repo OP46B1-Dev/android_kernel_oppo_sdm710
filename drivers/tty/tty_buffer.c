@@ -532,7 +532,16 @@ static void flush_to_ldisc(struct work_struct *work)
 			continue;
 		}
 
+		#ifdef OPLUS_BUG_STABILITY
+		if(tty->driver_data != NULL)
+			count = receive_buf(disc, head, count);
+		else {
+			count = 0;
+			pr_info("oppo driver_data == NULL skip the buf process, uart_open is not finished\n");
+		}
+		#else
 		count = receive_buf(disc, head, count);
+		#endif /* OPLUS_BUG_STABILITY */
 		if (!count)
 			break;
 		head->read += count;

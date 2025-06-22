@@ -856,6 +856,9 @@ source "drivers/misc/genwqe/Kconfig"
 source "drivers/misc/echo/Kconfig"
 source "drivers/misc/cxl/Kconfig"
 source "drivers/misc/fpr_FingerprintCard/Kconfig"
+#ifdef OPLUS_FEATURE_CHG_BASIC
+source "drivers/misc/oplus_motor/Kconfig"
+#endif /* OPLUS_FEATURE_CHG_BASIC */
 endmenu
 
 config OKL4_LINK_SHBUF
