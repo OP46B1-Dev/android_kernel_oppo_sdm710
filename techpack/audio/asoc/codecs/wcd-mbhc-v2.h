@@ -138,9 +138,17 @@ do {                                                    \
 				  SND_JACK_BTN_2 | SND_JACK_BTN_3 | \
 				  SND_JACK_BTN_4 | SND_JACK_BTN_5)
 #define OCP_ATTEMPT 20
-#define HS_DETECT_PLUG_TIME_MS (3 * 1000)
+//#ifndef OPLUS_ARCH_EXTENDS
+//#define HS_DETECT_PLUG_TIME_MS (3 * 1000)
+//#else /* OPLUS_ARCH_EXTENDS */
+#define HS_DETECT_PLUG_TIME_MS (5 * 1000)
+//#endif /* OPLUS_ARCH_EXTENDS */
 #define SPECIAL_HS_DETECT_TIME_MS (2 * 1000)
+#ifndef OPLUS_ARCH_EXTENDS
 #define MBHC_BUTTON_PRESS_THRESHOLD_MIN 250
+#else /*OPLUS_ARCH_EXTENDS*/
+#define MBHC_BUTTON_PRESS_THRESHOLD_MIN 1000
+#endif /*OPLUS_ARCH_EXTENDS*/
 #define GND_MIC_SWAP_THRESHOLD 4
 #define GND_MIC_USBC_SWAP_THRESHOLD 2
 #define WCD_FAKE_REMOVAL_MIN_PERIOD_MS 100
@@ -149,7 +157,9 @@ do {                                                    \
 #define FW_READ_TIMEOUT 4000000
 #define FAKE_REM_RETRY_ATTEMPTS 3
 #define MAX_IMPED 60000
-
+//#ifdef OPLUS_ARCH_EXTENDS
+#define HP_DETECT_WORK_DELAY_MS 400
+//#endif /* OPLUS_ARCH_EXTENDS */
 #define WCD_MBHC_BTN_PRESS_COMPL_TIMEOUT_MS  50
 #define ANC_DETECT_RETRY_CNT 7
 #define WCD_MBHC_SPL_HS_CNT  1
@@ -456,6 +466,9 @@ struct wcd_mbhc_cb {
 	void (*trim_btn_reg)(struct snd_soc_codec *);
 	void (*compute_impedance)(struct wcd_mbhc *, uint32_t *, uint32_t *);
 	void (*set_micbias_value)(struct snd_soc_codec *);
+	//#ifdef OPLUS_ARCH_EXTENDS
+	void (*set_micbias_value_switch)(struct snd_soc_codec *, u32);
+	//#endif /* OPLUS_ARCH_EXTENDS */
 	void (*set_auto_zeroing)(struct snd_soc_codec *, bool);
 	struct firmware_cal * (*get_hwdep_fw_cal)(struct wcd_mbhc *,
 			enum wcd_cal_type);
@@ -568,6 +581,9 @@ struct wcd_mbhc {
 
 	/* Work to correct accessory type */
 	struct work_struct correct_plug_swch;
+	//#ifdef OPLUS_ARCH_EXTENDS
+	struct delayed_work hp_detect_work;
+	//#endif /* OPLUS_ARCH_EXTENDS */
 	struct notifier_block nblock;
 
 	struct wcd_mbhc_register *wcd_mbhc_regs;

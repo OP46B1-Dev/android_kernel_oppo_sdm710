@@ -33,6 +33,9 @@
 #include "wcd-mbhc-adc.h"
 #include "wcd-mbhc-v2-api.h"
 
+//#ifdef OPLUS_ARCH_EXTENDS
+#include <soc/oplus/system/oppo_project.h>
+//#endif /* OPLUS_ARCH_EXTENDS */
 void wcd_mbhc_jack_report(struct wcd_mbhc *mbhc,
 			  struct snd_soc_jack *jack, int status, int mask)
 {
@@ -307,7 +310,18 @@ out_micb_en:
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
 		else
 			/* enable current source and disable mb, pullup*/
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+			//#ifndef OPLUS_ARCH_EXTENDS
+			//wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+			//#else /* OPLUS_ARCH_EXTENDS */
+			{
+				pr_info("%s: current_plug %d\n", __func__, mbhc->current_plug);
+				if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADSET) {
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+				} else {
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+				}
+			}
+			//#endif /* OPLUS_ARCH_EXTENDS */
 
 		/* configure cap settings properly when micbias is disabled */
 		if (mbhc->mbhc_cb->set_cap_mode)
@@ -554,8 +568,10 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 				enum snd_jack_types jack_type)
 {
 	struct snd_soc_codec *codec = mbhc->codec;
+	//#ifndef OPLUS_ARCH_EXTENDS
 	bool is_pa_on = false;
 	u8 fsm_en = 0;
+	//#endif /* OPLUS_ARCH_EXTENDS */
 
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
 
@@ -571,10 +587,19 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 		if (wcd_cancel_btn_work(mbhc)) {
 			pr_debug("%s: button press is canceled\n", __func__);
 		} else if (mbhc->buttons_pressed) {
-			pr_debug("%s: release of button press%d\n",
+			//#ifndef OPLUS_ARCH_EXTENDS
+			/*pr_debug("%s: release of button press%d\n",
 				 __func__, jack_type);
 			wcd_mbhc_jack_report(mbhc, &mbhc->button_jack, 0,
+					    mbhc->buttons_pressed);*/
+			//#else /* OPLUS_ARCH_EXTENDS */
+			pr_info("%s: release of button press%d\n",
+				 __func__, jack_type);
+			if (mbhc->buttons_pressed & (SND_JACK_BTN_2 | SND_JACK_BTN_3)) {
+				wcd_mbhc_jack_report(mbhc, &mbhc->button_jack, 0,
 					    mbhc->buttons_pressed);
+			}
+			//#endif /* OPLUS_ARCH_EXTENDS */
 			mbhc->buttons_pressed &=
 				~WCD_MBHC_JACK_BUTTON_MASK;
 		}
@@ -597,8 +622,13 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 
 		mbhc->hph_type = WCD_MBHC_HPH_NONE;
 		mbhc->zl = mbhc->zr = 0;
-		pr_debug("%s: Reporting removal %d(%x)\n", __func__,
+		//#ifndef OPLUS_ARCH_EXTENDS
+		/*pr_debug("%s: Reporting removal %d(%x)\n", __func__,
+			 jack_type, mbhc->hph_status);*/
+		//#else /* OPLUS_ARCH_EXTENDS */
+		pr_info("%s: Reporting removal %d(%x)\n", __func__,
 			 jack_type, mbhc->hph_status);
+		//#endif /* OPLUS_ARCH_EXTENDS */
 		wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
 				mbhc->hph_status, WCD_MBHC_JACK_MASK);
 		wcd_mbhc_set_and_turnoff_hph_padac(mbhc);
@@ -677,7 +707,8 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			mbhc->current_plug = MBHC_PLUG_TYPE_HIGH_HPH;
 		} else if (jack_type == SND_JACK_ANC_HEADPHONE)
 			mbhc->current_plug = MBHC_PLUG_TYPE_ANC_HEADPHONE;
-
+		//#ifndef OPLUS_ARCH_EXTENDS
+		 /*
 		if (mbhc->mbhc_cb->hph_pa_on_status)
 			is_pa_on = mbhc->mbhc_cb->hph_pa_on_status(codec);
 
@@ -685,7 +716,7 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			mbhc->mbhc_cb->compute_impedance &&
 			(mbhc->mbhc_cfg->linein_th != 0) &&
 			(!is_pa_on)) {
-			/* Set MUX_CTL to AUTO for Z-det */
+			// Set MUX_CTL to AUTO for Z-det
 			WCD_MBHC_REG_READ(WCD_MBHC_FSM_EN, fsm_en);
 			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 0);
 			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MUX_CTL,
@@ -715,15 +746,28 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 				pr_debug("%s: Marking jack type as SND_JACK_LINEOUT\n",
 				__func__);
 			}
-		}
+		}*/
+		//#endif /* OPLUS_ARCH_EXTENDS */
+
 
 		mbhc->hph_status |= jack_type;
 
-		pr_debug("%s: Reporting insertion %d(%x)\n", __func__,
+		//#ifndef VENDOR_EDIT
+		/*pr_debug("%s: Reporting insertion %d(%x)\n", __func__,
 			 jack_type, mbhc->hph_status);
 		wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
 				    (mbhc->hph_status | SND_JACK_MECHANICAL),
-				    WCD_MBHC_JACK_MASK);
+				    WCD_MBHC_JACK_MASK);*/
+		//#else /* OPLUS_ARCH_EXTENDS */
+		pr_info("%s: [1:headphone 3:headset 4:lineout]\n", __func__);
+		pr_info("%s: Reporting insertion jack_type=%d, (hph_status=0x%x)\n",
+			__func__, jack_type, mbhc->hph_status);
+		if (jack_type != SND_JACK_LINEOUT) {
+			wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
+				(mbhc->hph_status | SND_JACK_MECHANICAL),
+				WCD_MBHC_JACK_MASK);
+		}
+		//#endif /* OPLUS_ARCH_EXTENDS */
 		wcd_mbhc_clr_and_turnon_hph_padac(mbhc);
 	}
 	pr_debug("%s: leave hph_status %x\n", __func__, mbhc->hph_status);
@@ -774,9 +818,13 @@ void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 {
 	bool anc_mic_found = false;
 	enum snd_jack_types jack_type;
-
-	pr_debug("%s: enter current_plug(%d) new_plug(%d)\n",
+	//#ifndef OPLUS_ARCH_EXTENDS
+	/*pr_debug("%s: enter current_plug(%d) new_plug(%d)\n",
+		 __func__, mbhc->current_plug, plug_type);*/
+	//#else /* OPLUS_ARCH_EXTENDS */
+	pr_info("%s: enter current_plug(%d) new_plug(%d)\n",
 		 __func__, mbhc->current_plug, plug_type);
+	//#endif /* OPLUS_ARCH_EXTENDS */
 
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
 
@@ -840,7 +888,11 @@ void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 		     mbhc->current_plug, plug_type);
 	}
 exit:
-	pr_debug("%s: leave\n", __func__);
+	//#ifndef OPLUS_ARCH_EXTENDS
+	//pr_debug("%s: leave\n", __func__);
+	//#else /* OPLUS_ARCH_EXTENDS */
+	pr_info("%s: leave\n", __func__);
+	//#endif /* OPLUS_ARCH_EXTENDS */
 }
 EXPORT_SYMBOL(wcd_mbhc_find_plug_and_report);
 
@@ -851,7 +903,23 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 	struct snd_soc_codec *codec = mbhc->codec;
 	enum snd_jack_types jack_type;
 
-	dev_dbg(codec->dev, "%s: enter\n", __func__);
+	//ifdef OPLUS_ARCH_EXTENDS
+	#undef pr_debug
+	#define pr_debug pr_info
+	//#endif /* OPLUS_ARCH_EXTENDS */
+
+	//#ifndef OPLUS_ARCH_EXTENDS
+	//dev_dbg(codec->dev, "%s: enter\n", __func__);
+	//#else /* OPLUS_ARCH_EXTENDS */
+	pr_info("%s: enter\n", __func__);
+	//#endif /* OPLUS_ARCH_EXTENDS */
+
+	//#ifdef OPLUS_ARCH_EXTENDS
+	if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY) {
+		cancel_delayed_work_sync(&mbhc->hp_detect_work);
+	}
+	//#endif /* OPLUS_ARCH_EXTENDS */
+
 	WCD_MBHC_RSC_LOCK(mbhc);
 	mbhc->in_swch_irq_handler = true;
 
@@ -894,6 +962,12 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 			 */
 			mbhc->mbhc_cb->micb_internal(codec, 1, true);
 
+		//#ifdef OPLUS_ARCH_EXTENDS
+		if (mbhc->mbhc_cb->set_micbias_value_switch) {
+			mbhc->mbhc_cb->set_micbias_value_switch(codec, 2700000);
+		}
+		//#endif /* OPLUS_ARCH_EXTENDS */
+
 		/* Remove micbias pulldown */
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_PULLDOWN_CTRL, 0);
 		/* Apply trim if needed on the device */
@@ -904,10 +978,22 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 			mbhc->mbhc_cb->enable_mb_source(mbhc, true);
 		mbhc->btn_press_intr = false;
 		mbhc->is_btn_press = false;
-		if (mbhc->mbhc_fn)
-			mbhc->mbhc_fn->wcd_mbhc_detect_plug_type(mbhc);
+		//#ifndef OPLUS_ARCH_EXTENDS
+		/*if (mbhc->mbhc_fn)
+			mbhc->mbhc_fn->wcd_mbhc_detect_plug_type(mbhc);*/
+		//#else /* OPLUS_ARCH_EXTENDS */
+		if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY) {
+			schedule_delayed_work(&mbhc->hp_detect_work, msecs_to_jiffies(HP_DETECT_WORK_DELAY_MS));
+		} else {
+			if (mbhc->mbhc_fn)
+				mbhc->mbhc_fn->wcd_mbhc_detect_plug_type(mbhc);
+		}
+		//#endif /* OPLUS_ARCH_EXTENDS */
 	} else if ((mbhc->current_plug != MBHC_PLUG_TYPE_NONE)
 			&& !detection_type) {
+		//#ifdef OPLUS_ARCH_EXTENDS
+		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MICB_CTRL, 0);
+		//#endif /* OPLUS_ARCH_EXTENDS */
 		/* Disable external voltage source to micbias if present */
 		if (mbhc->mbhc_cb->enable_mb_source)
 			mbhc->mbhc_cb->enable_mb_source(mbhc, false);
@@ -980,6 +1066,15 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 	int r = IRQ_HANDLED;
 	struct wcd_mbhc *mbhc = data;
 
+//#ifdef OPLUS_ARCH_EXTENDS
+#undef pr_debug
+#define pr_debug pr_info
+//#endif /* OPLUS_ARCH_EXTENDS */
+
+	//#ifdef OPLUS_ARCH_EXTENDS
+	disable_irq_nosync(irq);
+	//#endif /* OPLUS_ARCH_EXTENDS */
+
 	pr_debug("%s: enter\n", __func__);
 	if (unlikely((mbhc->mbhc_cb->lock_sleep(mbhc, true)) == false)) {
 		pr_warn("%s: failed to hold suspend\n", __func__);
@@ -989,6 +1084,12 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 		wcd_mbhc_swch_irq_handler(mbhc);
 		mbhc->mbhc_cb->lock_sleep(mbhc, false);
 	}
+
+	//#ifdef OPLUS_ARCH_EXTENDS
+	enable_irq(irq);
+	//#endif /* OPLUS_ARCH_EXTENDS */
+
+
 	pr_debug("%s: leave %d\n", __func__, r);
 	return r;
 }
@@ -1032,6 +1133,11 @@ static void wcd_btn_lpress_fn(struct work_struct *work)
 	struct delayed_work *dwork;
 	struct wcd_mbhc *mbhc;
 	s16 btn_result = 0;
+
+//#ifdef OPLUS_ARCH_EXTENDS
+#undef pr_debug
+#define pr_debug pr_info
+//#endif /* OPLUS_ARCH_EXTENDS */
 
 	pr_debug("%s: Enter\n", __func__);
 
@@ -1078,6 +1184,12 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 	struct wcd_mbhc *mbhc = data;
 	int mask;
 	unsigned long msec_val;
+
+//#ifdef OPLUS_ARCH_EXTENDS
+#undef pr_debug
+#define pr_debug pr_info
+//#endif /* OPLUS_ARCH_EXTENDS */
+
 
 	pr_debug("%s: enter\n", __func__);
 	complete(&mbhc->btn_press_compl);
@@ -1129,6 +1241,12 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	struct wcd_mbhc *mbhc = data;
 	int ret;
 
+//#ifdef OPLUS_ARCH_EXTENDS
+#undef pr_debug
+#define pr_debug pr_info
+//#endif /* OPLUS_ARCH_EXTENDS */
+
+
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
 	if (wcd_swch_level_remove(mbhc)) {
@@ -1152,7 +1270,9 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	 */
 	if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY &&
 		mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE) {
-		wcd_mbhc_find_plug_and_report(mbhc, MBHC_PLUG_TYPE_HEADSET);
+		//#ifndef OPLUS_ARCH_EXTENDS
+		//wcd_mbhc_find_plug_and_report(mbhc, MBHC_PLUG_TYPE_HEADSET);
+		//#endif /* OPLUS_ARCH_EXTENDS */
 		goto exit;
 
 	}
@@ -1279,7 +1399,14 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	if (mbhc->mbhc_cb->hph_pull_up_control)
 		mbhc->mbhc_cb->hph_pull_up_control(codec, I_DEFAULT);
 	else
-		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HS_L_DET_PULL_UP_CTRL, 3);
+		//#ifndef OPLUS_ARCH_EXTENDS
+		//WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HS_L_DET_PULL_UP_CTRL, 3);
+		//#else /* OPLUS_ARCH_EXTENDS */
+		{
+			pr_info("%s: default disable pull up for detection\n", __func__);
+			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HS_L_DET_PULL_UP_CTRL, 0);
+		}
+		//#endif /* OPLUS_ARCH_EXTENDS */
 
 	if (mbhc->mbhc_cfg->moisture_en && mbhc->mbhc_cb->mbhc_moisture_config)
 		mbhc->mbhc_cb->mbhc_moisture_config(mbhc);
@@ -1979,6 +2106,10 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 
 	init_waitqueue_head(&mbhc->wait_btn_press);
 	mutex_init(&mbhc->codec_resource_lock);
+
+	//#ifdef OPLUS_ARCH_EXTENDS
+	mbhc->mbhc_detection_logic = WCD_DETECTION_LEGACY;
+	//#endif /* OPLUS_ARCH_EXTENDS */
 
 	switch (mbhc->mbhc_detection_logic) {
 	case WCD_DETECTION_LEGACY:
