@@ -7111,7 +7111,6 @@ int dsi_display_unprepare(struct dsi_display *display)
 }
 
 #ifdef VENDOR_EDIT
-/
 struct dsi_display *get_main_display(void) {
 		return primary_display;
 }
