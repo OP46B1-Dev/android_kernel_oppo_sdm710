@@ -9,13 +9,13 @@ config OPLUS_FEATURE_ANDROIDBOOT
   default n
   help
     define this config to get android boot cmdline.
-	
+
 config OPLUS_FEATURE_FTMMODE
   tristate "Oplus ftm mode"
   default n
   help 
 	define this config to get ftm mode cmdline.
-	
+
 config OPLUS_FEATURE_CHARGERPRESENT
   tristate "Oplus charger present"
   default n
@@ -33,7 +33,7 @@ config OPLUS_FEATURE_SIMCARDNUM
   default n
   help 
 	define this config to get simcardnum cmdline.
-	
+
 config OPLUS_FEATURE_CDT
   tristate "Oplus cdt"
   default n
