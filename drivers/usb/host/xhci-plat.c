@@ -441,15 +441,10 @@ static int xhci_plat_runtime_idle(struct device *dev)
 
 static int xhci_plat_pm_freeze(struct device *dev)
 {
-	struct usb_hcd *hcd = dev_get_drvdata(dev);
-	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
+	struct usb_hcd	*hcd = dev_get_drvdata(dev);
+	struct xhci_hcd	*xhci = hcd_to_xhci(hcd);
 
-	if (!xhci)
-		return 0;
-
-	dev_dbg(dev, "xhci-plat freeze\n");
-
-	return xhci_suspend(xhci, false);
+	return xhci_resume(xhci, 0);
 }
 
 static int xhci_plat_pm_restore(struct device *dev)

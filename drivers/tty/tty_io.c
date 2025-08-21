@@ -544,8 +544,8 @@ static void __proc_set_tty(struct tty_struct *tty)
 	put_pid(tty->session);
 	put_pid(tty->pgrp);
 	tty->pgrp = get_pid(task_pgrp(current));
-	spin_unlock_irqrestore(&tty->ctrl_lock, flags);
 	tty->session = get_pid(task_session(current));
+	spin_unlock_irqrestore(&tty->ctrl_lock, flags);
 	if (current->signal->tty) {
 		tty_debug(tty, "current tty %s not NULL!!\n",
 			  current->signal->tty->name);
@@ -935,20 +935,20 @@ void disassociate_ctty(int on_exit)
 	spin_lock_irq(&current->sighand->siglock);
 	put_pid(current->signal->tty_old_pgrp);
 	current->signal->tty_old_pgrp = NULL;
-
 	tty = tty_kref_get(current->signal->tty);
 	spin_unlock_irq(&current->sighand->siglock);
 
-        if (tty) {
+	if (tty) {
 		unsigned long flags;
-                tty_lock(tty);
+
+		tty_lock(tty);
 		spin_lock_irqsave(&tty->ctrl_lock, flags);
 		put_pid(tty->session);
 		put_pid(tty->pgrp);
 		tty->session = NULL;
 		tty->pgrp = NULL;
 		spin_unlock_irqrestore(&tty->ctrl_lock, flags);
-                tty_unlock(tty);
+		tty_unlock(tty);
 		tty_kref_put(tty);
 	} else
 		tty_debug_hangup(tty, "no current tty\n");
@@ -2316,8 +2316,6 @@ static int tty_fasync(int fd, struct file *filp, int on)
  *	Locking:
  *		Called functions take tty_ldiscs_lock
  *		current->signal->tty check is safe without locks
- *
- *	FIXME: may race normal receive processing
  */
 
 static int tiocsti(struct tty_struct *tty, char __user *p)
@@ -2333,8 +2331,10 @@ static int tiocsti(struct tty_struct *tty, char __user *p)
 	ld = tty_ldisc_ref_wait(tty);
 	if (!ld)
 		return -EIO;
+	tty_buffer_lock_exclusive(tty->port);
 	if (ld->ops->receive_buf)
 		ld->ops->receive_buf(tty, &ch, &mbz, 1);
+	tty_buffer_unlock_exclusive(tty->port);
 	tty_ldisc_deref(ld);
 	return 0;
 }
@@ -2640,14 +2640,13 @@ static int tiocspgrp(struct tty_struct *tty, struct tty_struct *real_tty, pid_t 
 	if (pgrp_nr < 0)
 		return -EINVAL;
 
-        spin_lock_irq(&real_tty->ctrl_lock);
-        if (!current->signal->tty ||
-           (current->signal->tty != real_tty) ||
-           (real_tty->session != task_session(current))) {
-                retval = -ENOTTY;
-                goto out_unlock_ctrl;
-        }
-
+	spin_lock_irq(&real_tty->ctrl_lock);
+	if (!current->signal->tty ||
+	    (current->signal->tty != real_tty) ||
+	    (real_tty->session != task_session(current))) {
+		retval = -ENOTTY;
+		goto out_unlock_ctrl;
+	}
 	rcu_read_lock();
 	pgrp = find_vpid(pgrp_nr);
 	retval = -ESRCH;
@@ -2657,14 +2656,12 @@ static int tiocspgrp(struct tty_struct *tty, struct tty_struct *real_tty, pid_t 
 	if (session_of_pgrp(pgrp) != task_session(current))
 		goto out_unlock;
 	retval = 0;
-
 	put_pid(real_tty->pgrp);
 	real_tty->pgrp = get_pid(pgrp);
-
 out_unlock:
 	rcu_read_unlock();
 out_unlock_ctrl:
-        spin_unlock_irq(&real_tty->ctrl_lock);
+	spin_unlock_irq(&real_tty->ctrl_lock);
 	return retval;
 }
 
@@ -2680,8 +2677,8 @@ out_unlock_ctrl:
 
 static int tiocgsid(struct tty_struct *tty, struct tty_struct *real_tty, pid_t __user *p)
 {
-        unsigned long flags;
-        pid_t sid;
+	unsigned long flags;
+	pid_t sid;
 
 	/*
 	 * (tty == real_tty) is a cheap way of
@@ -2689,18 +2686,18 @@ static int tiocgsid(struct tty_struct *tty, struct tty_struct *real_tty, pid_t _
 	*/
 	if (tty == real_tty && current->signal->tty != real_tty)
 		return -ENOTTY;
-        
-        spin_lock_irqsave(&real_tty->ctrl_lock, flags);
+
+	spin_lock_irqsave(&real_tty->ctrl_lock, flags);
 	if (!real_tty->session)
 		goto err;
 	sid = pid_vnr(real_tty->session);
-        spin_unlock_irqrestore(&real_tty->ctrl_lock, flags);
+	spin_unlock_irqrestore(&real_tty->ctrl_lock, flags);
 
-        return put_user(sid, p);
+	return put_user(sid, p);
 
 err:
-        spin_unlock_irqrestore(&real_tty->ctrl_lock, flags);
-        return -ENOTTY;
+	spin_unlock_irqrestore(&real_tty->ctrl_lock, flags);
+	return -ENOTTY;
 }
 
 /**
@@ -2797,14 +2794,14 @@ out:
  *	@p: pointer to result
  *
  *	Obtain the modem status bits from the tty driver if the feature
- *	is supported. Return -EINVAL if it is not available.
+ *	is supported. Return -ENOTTY if it is not available.
  *
  *	Locking: none (up to the driver)
  */
 
 static int tty_tiocmget(struct tty_struct *tty, int __user *p)
 {
-	int retval = -EINVAL;
+	int retval = -ENOTTY;
 
 	if (tty->ops->tiocmget) {
 		retval = tty->ops->tiocmget(tty);
@@ -2822,7 +2819,7 @@ static int tty_tiocmget(struct tty_struct *tty, int __user *p)
  *	@p: pointer to desired bits
  *
  *	Set the modem status bits from the tty driver if the feature
- *	is supported. Return -EINVAL if it is not available.
+ *	is supported. Return -ENOTTY if it is not available.
  *
  *	Locking: none (up to the driver)
  */
@@ -2834,7 +2831,7 @@ static int tty_tiocmset(struct tty_struct *tty, unsigned int cmd,
 	unsigned int set, clear, val;
 
 	if (tty->ops->tiocmset == NULL)
-		return -EINVAL;
+		return -ENOTTY;
 
 	retval = get_user(val, p);
 	if (retval)
@@ -3118,15 +3115,14 @@ void __do_SAK(struct tty_struct *tty)
 	struct task_struct *g, *p;
 	struct pid *session;
 	int		i;
-        unsigned long flags;
+	unsigned long flags;
 
 	if (!tty)
 		return;
 
-       
 	spin_lock_irqsave(&tty->ctrl_lock, flags);
-        session = get_pid(tty->session);
-        spin_unlock_irqrestore(&tty->ctrl_lock, flags);
+	session = get_pid(tty->session);
+	spin_unlock_irqrestore(&tty->ctrl_lock, flags);
 
 	tty_ldisc_flush(tty);
 
@@ -3158,7 +3154,7 @@ void __do_SAK(struct tty_struct *tty)
 		task_unlock(p);
 	} while_each_thread(g, p);
 	read_unlock(&tasklist_lock);
-        put_pid(session);
+	put_pid(session);
 #endif
 }
 
