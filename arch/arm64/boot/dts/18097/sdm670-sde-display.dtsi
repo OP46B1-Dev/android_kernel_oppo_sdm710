@@ -33,7 +33,6 @@
 #include "dsi-panel-xrsmrtvwr-jdi-dual-video.dtsi"
 #include <dt-bindings/clock/mdss-10nm-pll-clk.h>
 //#ifdef OPLUS_BUG_STABILITY
-#include "dsi-panel_oppo17081samsung_ams596w401_1080_2280.dtsi"
 #include "dsi-panel_oppo18081samsung_ams641rw01_1080_2340.dtsi"
 //#endif
 
