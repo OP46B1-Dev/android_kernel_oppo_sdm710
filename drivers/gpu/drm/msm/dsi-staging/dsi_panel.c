@@ -2745,6 +2745,16 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel,
 		panel->bl_config.bl_max_level = val;
 	}
 
+	rc = of_property_read_u32(of_node, "qcom,mdss-brightness-min-level",
+		&val);
+	if (rc) {
+		pr_debug("[%s] brigheness-min-level unspecified, defaulting to 1\n",
+			 panel->name);
+		panel->bl_config.brightness_min_level = 1;
+	} else {
+		panel->bl_config.brightness_min_level = val;
+	}
+
 	rc = of_property_read_u32(of_node, "qcom,mdss-brightness-max-level",
 		&val);
 	if (rc) {
