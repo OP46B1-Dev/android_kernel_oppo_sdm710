@@ -1,0 +1,14 @@
+# OPlus configuration options
+
+config MACH_OPLUS
+	bool "OPlus device"
+	depends on ARCH_QCOM
+	help
+	  Support for OPlus products
+
+config MACH_OPLUS_SDM710
+	bool "OPlus SDM710"
+	depends on ARCH_QCOM
+	select MACH_OPLUS
+	help
+	  Support for OPlus SDM710 devices
