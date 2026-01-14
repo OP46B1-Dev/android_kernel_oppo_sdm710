@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2018-2020 Oplus. All rights reserved.
+
+source "drivers/soc/oplus/oplus_devinfo/Kconfig"
+source "drivers/soc/oplus/oplus_project/Kconfig"
+source "drivers/soc/oplus/project_info/Kconfig"
+source "drivers/soc/oplus/oplus_mdmrst/Kconfig"
