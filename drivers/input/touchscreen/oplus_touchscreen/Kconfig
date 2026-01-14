@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2018-2020 Oplus. All rights reserved.
+
+config TOUCHSCREEN_OPLUS
+  bool "OPLUS tp module"
+  help
+    Say Y here if you have touchscreen module.
+
+config TOUCHSCREEN_SYNAPTICS
+  bool "TP Synaptics_IC enable or not for OPLUS"
+  help
+    say Y to enable driver for Touchpanel using Synaptics_IC
+
+if TOUCHSCREEN_SYNAPTICS
+source "drivers/input/touchscreen/oplus_touchscreen/Synaptics/Kconfig"
+endif
