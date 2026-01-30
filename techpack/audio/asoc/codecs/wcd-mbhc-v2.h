@@ -138,9 +138,15 @@ do {                                                    \
 				  SND_JACK_BTN_2 | SND_JACK_BTN_3 | \
 				  SND_JACK_BTN_4 | SND_JACK_BTN_5)
 #define OCP_ATTEMPT 20
+#ifdef CONFIG_MACH_OPLUS_SDM710
+#define HS_DETECT_PLUG_TIME_MS (5 * 1000)
+#define HP_DETECT_WORK_DELAY_MS 400
+#define MBHC_BUTTON_PRESS_THRESHOLD_MIN 1000
+#else
 #define HS_DETECT_PLUG_TIME_MS (3 * 1000)
-#define SPECIAL_HS_DETECT_TIME_MS (2 * 1000)
 #define MBHC_BUTTON_PRESS_THRESHOLD_MIN 250
+#endif
+#define SPECIAL_HS_DETECT_TIME_MS (2 * 1000)
 #define GND_MIC_SWAP_THRESHOLD 4
 #define GND_MIC_USBC_SWAP_THRESHOLD 2
 #define WCD_FAKE_REMOVAL_MIN_PERIOD_MS 100
@@ -457,6 +463,9 @@ struct wcd_mbhc_cb {
 	void (*trim_btn_reg)(struct snd_soc_codec *);
 	void (*compute_impedance)(struct wcd_mbhc *, uint32_t *, uint32_t *);
 	void (*set_micbias_value)(struct snd_soc_codec *);
+#ifdef CONFIG_MACH_OPLUS_SDM710
+	void (*set_micbias_value_switch)(struct snd_soc_codec *, u32);
+#endif
 	void (*set_auto_zeroing)(struct snd_soc_codec *, bool);
 	struct firmware_cal * (*get_hwdep_fw_cal)(struct wcd_mbhc *,
 			enum wcd_cal_type);
@@ -570,6 +579,10 @@ struct wcd_mbhc {
 
 	/* Work to correct accessory type */
 	struct work_struct correct_plug_swch;
+#ifdef CONFIG_MACH_OPLUS_SDM710
+	/* Delay legacy detection until the mechanical contact has settled. */
+	struct delayed_work hp_detect_work;
+#endif
 	struct notifier_block nblock;
 
 	struct wcd_mbhc_register *wcd_mbhc_regs;

@@ -59,7 +59,13 @@
 #define SPK_PMD 2
 #define SPK_PMU 3
 
-#define MICBIAS_DEFAULT_VAL 1800000
+#define MICBIAS_1P80_UV 1800000
+#define MICBIAS_2P70_UV 2700000
+#ifdef CONFIG_MACH_OPLUS_SDM710
+#define MICBIAS_DEFAULT_VAL MICBIAS_2P70_UV
+#else
+#define MICBIAS_DEFAULT_VAL MICBIAS_1P80_UV
+#endif
 #define MICBIAS_MIN_VAL 1600000
 #define MICBIAS_STEP_SIZE 50000
 
@@ -128,6 +134,13 @@ static struct wcd_mbhc_register
 	WCD_MBHC_REGISTER("WCD_MBHC_HS_COMP_RESULT",
 			  MSM89XX_PMIC_ANALOG_MBHC_ZDET_ELECT_RESULT, 0x01,
 			  0, 0),
+	/*
+	 * The sdm660 analog codec has no IN2P clamp-state field.  Keep the
+	 * slot required by the common MBHC enum so all following fields retain
+	 * their intended indices.
+	 */
+	WCD_MBHC_REGISTER("WCD_MBHC_IN2P_CLAMP_STATE",
+			  SND_SOC_NOPM, 0x0, 0, 0),
 	WCD_MBHC_REGISTER("WCD_MBHC_MIC_SCHMT_RESULT",
 			  MSM89XX_PMIC_ANALOG_MBHC_ZDET_ELECT_RESULT, 0x02,
 			  1, 0),
@@ -201,6 +214,10 @@ static void msm_anlg_cdc_set_auto_zeroing(struct snd_soc_codec *codec,
 static void msm_anlg_cdc_configure_cap(struct snd_soc_codec *codec,
 				       bool micbias1, bool micbias2);
 static bool msm_anlg_cdc_use_mb(struct snd_soc_codec *codec);
+#ifdef CONFIG_MACH_OPLUS_SDM710
+static void msm_anlg_cdc_set_micb_v_switch(struct snd_soc_codec *codec,
+                                           u32 voltage);
+#endif
 
 static int get_codec_version(struct sdm660_cdc_priv *sdm660_cdc)
 {
@@ -915,6 +932,9 @@ static const struct wcd_mbhc_cb mbhc_cb = {
 	.trim_btn_reg = msm_anlg_cdc_trim_btn_reg,
 	.compute_impedance = msm_anlg_cdc_mbhc_calc_impedance,
 	.set_micbias_value = msm_anlg_cdc_set_micb_v,
+#ifdef CONFIG_MACH_OPLUS_SDM710
+	.set_micbias_value_switch = msm_anlg_cdc_set_micb_v_switch,
+#endif
 	.set_auto_zeroing = msm_anlg_cdc_set_auto_zeroing,
 	.get_hwdep_fw_cal = msm_anlg_cdc_get_hwdep_fw_cal,
 	.set_cap_mode = msm_anlg_cdc_configure_cap,
@@ -1582,6 +1602,54 @@ static int msm_anlg_cdc_ear_pa_boost_set(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+static int msm_anlg_cdc_micbias_voltage_get(
+				struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct sdm660_cdc_priv *sdm660_cdc = snd_soc_codec_get_drvdata(codec);
+	struct sdm660_cdc_pdata *pdata;
+
+	if (!sdm660_cdc)
+		return -EINVAL;
+
+	pdata = sdm660_cdc->dev->platform_data;
+	if (!pdata)
+		return -EINVAL;
+
+	switch (pdata->micbias.cfilt1_mv) {
+	case MICBIAS_1P80_UV:
+		ucontrol->value.enumerated.item[0] = 0;
+		break;
+	case MICBIAS_2P70_UV:
+		ucontrol->value.enumerated.item[0] = 1;
+		break;
+	default:
+		dev_warn(codec->dev, "%s: unsupported micbias voltage %u\n",
+			 __func__, pdata->micbias.cfilt1_mv);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int msm_anlg_cdc_micbias_voltage_put(
+				struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	unsigned int item = ucontrol->value.enumerated.item[0];
+
+	if (item > 1)
+		return -EINVAL;
+
+	msm_anlg_cdc_set_micb_v_switch(codec, item ? MICBIAS_2P70_UV :
+							 MICBIAS_1P80_UV);
+	return 0;
+}
+#endif
+
 static int msm_anlg_cdc_pa_gain_get(struct snd_kcontrol *kcontrol,
 				    struct snd_ctl_elem_value *ucontrol)
 {
@@ -1876,6 +1944,16 @@ static int msm_anlg_cdc_ext_spk_boost_set(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+static const char * const msm_anlg_cdc_micbias_v_switch_text[] = {
+	"V_1P80", "V_2P70"
+};
+static const struct soc_enum msm_anlg_cdc_micbias_v_switch_enum =
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(msm_anlg_cdc_micbias_v_switch_text),
+			    msm_anlg_cdc_micbias_v_switch_text);
+
+#endif
+
 static const char * const msm_anlg_cdc_ear_pa_boost_ctrl_text[] = {
 		"DISABLE", "ENABLE"};
 static const struct soc_enum msm_anlg_cdc_ear_pa_boost_ctl_enum[] = {
@@ -1945,7 +2023,12 @@ static const struct snd_kcontrol_new msm_anlg_cdc_snd_controls[] = {
 					8, 0, analog_gain),
 	SOC_SINGLE_TLV("ADC3 Volume", MSM89XX_PMIC_ANALOG_TX_3_EN, 3,
 					8, 0, analog_gain),
-
+#ifdef CONFIG_MACH_OPLUS_SDM710
+	SOC_ENUM_EXT("MicBias_V_Switch",
+		     msm_anlg_cdc_micbias_v_switch_enum,
+		     msm_anlg_cdc_micbias_voltage_get,
+		     msm_anlg_cdc_micbias_voltage_put),
+#endif
 
 };
 
@@ -3930,6 +4013,40 @@ static void msm_anlg_cdc_set_micb_v(struct snd_soc_codec *codec)
 			0xF8, (reg_val << 3));
 }
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+static void msm_anlg_cdc_set_micb_v_switch(struct snd_soc_codec *codec,
+                                           u32 voltage)
+{
+	struct sdm660_cdc_priv *sdm660_cdc = snd_soc_codec_get_drvdata(codec);
+	struct sdm660_cdc_pdata *pdata;
+	u8 reg_val;
+
+	if (!sdm660_cdc)
+		return;
+
+	pdata = sdm660_cdc->dev->platform_data;
+	if (!pdata) {
+		dev_warn(codec->dev, "%s: platform data is unavailable\n",
+			 __func__);
+		return;
+	}
+
+	if (voltage != MICBIAS_1P80_UV && voltage != MICBIAS_2P70_UV) {
+		dev_warn(codec->dev, "%s: reject unsupported voltage %u\n",
+			 __func__, voltage);
+		return;
+	}
+
+	pdata->micbias.cfilt1_mv = voltage;
+	reg_val = VOLTAGE_CONVERTER(voltage, MICBIAS_MIN_VAL,
+				    MICBIAS_STEP_SIZE);
+	dev_dbg(codec->dev, "%s: micbias=%u reg_val=0x%x\n",
+		__func__, voltage, reg_val);
+	snd_soc_update_bits(codec, MSM89XX_PMIC_ANALOG_MICB_1_VAL,
+			    0xF8, reg_val << 3);
+}
+#endif
+
 static void msm_anlg_cdc_set_boost_v(struct snd_soc_codec *codec)
 {
 	struct sdm660_cdc_priv *sdm660_cdc_priv =
@@ -4180,6 +4297,10 @@ static int msm_anlg_cdc_soc_probe(struct snd_soc_codec *codec)
 		return ret;
 	}
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+	/* The PMIC analog codec uses the legacy comparator-based MBHC path. */
+	sdm660_cdc->mbhc.mbhc_detection_logic = WCD_DETECTION_LEGACY;
+#endif
 	wcd_mbhc_init(&sdm660_cdc->mbhc, codec, &mbhc_cb, &intr_ids,
 		      wcd_mbhc_registers, true);
 

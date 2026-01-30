@@ -38,3 +38,11 @@ wcd-core-objs	+= wcd934x/wcd934x-tables.o
 
 obj-$(CONFIG_WCD9XXX_CODEC_CORE) += wcd-core.o
 obj-$(CONFIG_SND_SOC_MSM_HDMI_CODEC_RX) += msm_hdmi_codec_rx.o
+
+ifeq ($(CONFIG_MACH_OPLUS_SDM710),y)
+obj-$(CONFIG_SND_SOC_AK4376) += ak4376/ak4376.o
+obj-$(CONFIG_SND_SOC_TFA98XX) += tfa98xx-v6/tfa_container_v6.o
+obj-$(CONFIG_SND_SOC_TFA98XX) += tfa98xx-v6/tfa98xx_v6.o
+obj-$(CONFIG_SND_SOC_TFA98XX) += tfa98xx-v6/tfa_dsp_v6.o
+obj-$(CONFIG_SND_SOC_TFA98XX) += tfa98xx-v6/tfa_init_v6.o
+endif

@@ -1219,7 +1219,11 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 		return NULL;
 
 #define S(X, Y) ((WCD_MBHC_CAL_PLUG_TYPE_PTR(msm_int_wcd_cal)->X) = (Y))
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	S(v_hs_max, 1500);
+	#else /* CONFIG_MACH_OPLUS_SDM710 */
+	S(v_hs_max, 1700);
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 #undef S
 #define S(X, Y) ((WCD_MBHC_CAL_BTN_DET_PTR(msm_int_wcd_cal)->X) = (Y))
 	S(num_btn, WCD_MBHC_DEF_BUTTONS);
@@ -1242,6 +1246,7 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 	 * 210-290 == Button 2
 	 * 360-680 == Button 3
 	 */
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	btn_low[0] = 75;
 	btn_high[0] = 75;
 	btn_low[1] = 150;
@@ -1252,6 +1257,18 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 	btn_high[3] = 450;
 	btn_low[4] = 500;
 	btn_high[4] = 500;
+	#else /* CONFIG_MACH_OPLUS_SDM710 */
+	btn_low[0] = 60;
+	btn_high[0] = 130;
+	btn_low[1] = 131;
+	btn_high[1] = 131;
+	btn_low[2] = 253;
+	btn_high[2] = 253;
+	btn_low[3] = 425;
+	btn_high[3] = 425;
+	btn_low[4] = 426;
+	btn_high[4] = 426;
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	return msm_int_wcd_cal;
 }
@@ -1327,6 +1344,25 @@ done:
 	msm_set_codec_reg_done(true);
 	return 0;
 }
+
+#if defined(CONFIG_SND_SOC_AK4376) && defined(CONFIG_MACH_OPLUS_SDM710)
+static int ak4376_audrx_init(struct snd_soc_pcm_runtime *rtd)
+{
+	struct snd_soc_codec *codec = rtd->codec;
+	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec); // &codec->dapm;
+	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+
+	pr_info("%s: dev_name%s\n", __func__, dev_name(cpu_dai->dev));
+
+	snd_soc_dapm_ignore_suspend(dapm, "AK4376 HPL");
+	snd_soc_dapm_ignore_suspend(dapm, "AK4376 HPR");
+	snd_soc_dapm_ignore_suspend(dapm, "Playback");
+
+	snd_soc_dapm_sync(dapm);
+
+	return 0;
+}
+#endif
 
 static int msm_sdw_audrx_init(struct snd_soc_pcm_runtime *rtd)
 {
@@ -2774,6 +2810,7 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.ops = &msm_mi2s_be_ops,
 		.ignore_suspend = 1,
 	},
+#if !defined(CONFIG_SND_SOC_AK4376) || !defined(CONFIG_MACH_OPLUS_SDM710)
 	{
 		.name = LPASS_BE_SEC_MI2S_RX,
 		.stream_name = "Secondary MI2S Playback",
@@ -2789,6 +2826,24 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
 	},
+#else
+	{
+		.name = LPASS_BE_SEC_MI2S_RX,
+		.stream_name = "Secondary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.1",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "ak4376.2-0010",
+		.codec_dai_name = "ak4376-AIF1",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.id = MSM_BACKEND_DAI_SECONDARY_MI2S_RX,
+		.init = &ak4376_audrx_init,
+		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+#endif
 	{
 		.name = LPASS_BE_SEC_MI2S_TX,
 		.stream_name = "Secondary MI2S Capture",
@@ -2803,6 +2858,7 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.ops = &msm_mi2s_be_ops,
 		.ignore_suspend = 1,
 	},
+#if !defined(CONFIG_SND_SOC_TFA98XX) || !defined(CONFIG_MACH_OPLUS_SDM710)
 	{
 		.name = LPASS_BE_TERT_MI2S_RX,
 		.stream_name = "Tertiary MI2S Playback",
@@ -2818,6 +2874,23 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
 	},
+#else
+	{
+		.name = LPASS_BE_TERT_MI2S_RX,
+		.stream_name = "Tertiary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.2",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "tfa98xx.2-0035",
+		.codec_dai_name = "tfa98xx-aif-2-35",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.id = MSM_BACKEND_DAI_TERTIARY_MI2S_RX,
+		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+#endif
 	{
 		.name = LPASS_BE_TERT_MI2S_TX,
 		.stream_name = "Tertiary MI2S Capture",

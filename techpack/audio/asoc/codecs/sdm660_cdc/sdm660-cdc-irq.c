@@ -32,7 +32,11 @@
 
 #define MAX_NUM_IRQS 14
 #define NUM_IRQ_REGS 2
+#ifdef CONFIG_MACH_OPLUS_SDM710
+#define WCD9XXX_SYSTEM_RESUME_TIMEOUT_MS 2000
+#else
 #define WCD9XXX_SYSTEM_RESUME_TIMEOUT_MS 700
+#endif
 
 #define BYTE_BIT_MASK(nr) (1UL << ((nr) % BITS_PER_BYTE))
 #define BIT_BYTE(nr) ((nr) / BITS_PER_BYTE)
@@ -84,6 +88,7 @@ struct wcd9xxx_spmi_map {
 	uint8_t mask[NUM_IRQ_REGS];
 	int linuxirq[MAX_NUM_IRQS];
 	irq_handler_t handler[MAX_NUM_IRQS];
+	spinlock_t irq_lock;
 	struct platform_device *spmi[NUM_IRQ_REGS];
 	struct snd_soc_codec *codec;
 
@@ -97,41 +102,96 @@ struct wcd9xxx_spmi_map {
 
 struct wcd9xxx_spmi_map map;
 
+static bool wcd9xxx_spmi_irq_valid(int irq)
+{
+	return irq >= 0 && irq < MAX_NUM_IRQS;
+}
+
 void wcd9xxx_spmi_enable_irq(int irq)
 {
+	unsigned long flags;
+	int linux_irq = -1;
+	bool enable = false;
+
 	pr_debug("%s: irqno =%d\n", __func__, irq);
 
-	if (!(map.mask[BIT_BYTE(irq)] & (BYTE_BIT_MASK(irq))))
+	if (!wcd9xxx_spmi_irq_valid(irq)) {
+		pr_warn("%s: invalid irq index %d\n", __func__, irq);
 		return;
+	}
 
-	map.mask[BIT_BYTE(irq)] &=
-		~(BYTE_BIT_MASK(irq));
+	spin_lock_irqsave(&map.irq_lock, flags);
+	if (map.linuxirq[irq] >= 0 &&
+	    (map.mask[BIT_BYTE(irq)] & BYTE_BIT_MASK(irq))) {
+		map.mask[BIT_BYTE(irq)] &= ~BYTE_BIT_MASK(irq);
+		linux_irq = map.linuxirq[irq];
+		enable = true;
+	}
+	spin_unlock_irqrestore(&map.irq_lock, flags);
 
-	enable_irq(map.linuxirq[irq]);
+	if (enable)
+		enable_irq(linux_irq);
 }
 
 void wcd9xxx_spmi_disable_irq(int irq)
 {
+	unsigned long flags;
+	int linux_irq = -1;
+	bool disable = false;
+
 	pr_debug("%s: irqno =%d\n", __func__, irq);
 
-	if (map.mask[BIT_BYTE(irq)] & (BYTE_BIT_MASK(irq)))
+	if (!wcd9xxx_spmi_irq_valid(irq)) {
+		pr_warn("%s: invalid irq index %d\n", __func__, irq);
 		return;
+	}
 
-	map.mask[BIT_BYTE(irq)] |=
-		(BYTE_BIT_MASK(irq));
+	spin_lock_irqsave(&map.irq_lock, flags);
+	if (map.linuxirq[irq] >= 0 &&
+	    !(map.mask[BIT_BYTE(irq)] & BYTE_BIT_MASK(irq))) {
+		/* Set the software mask before disabling the Linux IRQ. */
+		map.mask[BIT_BYTE(irq)] |= BYTE_BIT_MASK(irq);
+		linux_irq = map.linuxirq[irq];
+		disable = true;
+	}
+	spin_unlock_irqrestore(&map.irq_lock, flags);
 
-	disable_irq_nosync(map.linuxirq[irq]);
+	if (disable)
+		disable_irq_nosync(linux_irq);
 }
 
 int wcd9xxx_spmi_request_irq(int irq, irq_handler_t handler,
 			const char *name, void *priv)
 {
+	struct platform_device *spmi;
+	unsigned long flags;
 	int rc;
+	int linux_irq;
 	unsigned long irq_flags;
 
-	map.linuxirq[irq] =
-		platform_get_irq_byname(map.spmi[BIT_BYTE(irq)],
-					irq_names[irq]);
+	if (!wcd9xxx_spmi_irq_valid(irq) || !handler || !name)
+		return -EINVAL;
+
+	spmi = map.spmi[BIT_BYTE(irq)];
+	if (!spmi)
+		return -ENODEV;
+
+	linux_irq = platform_get_irq_byname(spmi, irq_names[irq]);
+	if (linux_irq < 0) {
+		dev_err(&spmi->dev, "Can't get %s IRQ: %d\n",
+			irq_names[irq], linux_irq);
+		return linux_irq;
+	}
+
+	/* Keep the source masked until both the Linux IRQ and callback exist. */
+	spin_lock_irqsave(&map.irq_lock, flags);
+	if (map.linuxirq[irq] >= 0 || map.handler[irq]) {
+		spin_unlock_irqrestore(&map.irq_lock, flags);
+		return -EBUSY;
+	}
+	map.linuxirq[irq] = linux_irq;
+	map.mask[BIT_BYTE(irq)] |= BYTE_BIT_MASK(irq);
+	spin_unlock_irqrestore(&map.irq_lock, flags);
 
 	if (strcmp(name, "mbhc sw intr"))
 		irq_flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
@@ -141,30 +201,60 @@ int wcd9xxx_spmi_request_irq(int irq, irq_handler_t handler,
 			IRQF_ONESHOT | IRQF_NO_SUSPEND;
 	pr_debug("%s: name:%s irq_flags = %lx\n", __func__, name, irq_flags);
 
-	rc = devm_request_threaded_irq(&map.spmi[BIT_BYTE(irq)]->dev,
-				map.linuxirq[irq], NULL,
+	rc = devm_request_threaded_irq(&spmi->dev, linux_irq, NULL,
 				wcd9xxx_spmi_irq_handler,
-				irq_flags,
-				name, priv);
-		if (rc < 0) {
-			dev_err(&map.spmi[BIT_BYTE(irq)]->dev,
-				"Can't request %d IRQ\n", irq);
-			return rc;
-		}
+				irq_flags, name, priv);
+	if (rc < 0) {
+		dev_err(&spmi->dev, "Can't request %d IRQ\n", irq);
+		spin_lock_irqsave(&map.irq_lock, flags);
+		map.linuxirq[irq] = -1;
+		spin_unlock_irqrestore(&map.irq_lock, flags);
+		return rc;
+	}
 
-	dev_dbg(&map.spmi[BIT_BYTE(irq)]->dev,
-			"irq %d linuxIRQ: %d\n", irq, map.linuxirq[irq]);
+	dev_dbg(&spmi->dev, "irq %d linuxIRQ: %d\n", irq, linux_irq);
+	spin_lock_irqsave(&map.irq_lock, flags);
+	WRITE_ONCE(map.handler[irq], handler);
+	/* Publish the callback before allowing the child IRQ to dispatch. */
+	smp_wmb();
 	map.mask[BIT_BYTE(irq)] &= ~BYTE_BIT_MASK(irq);
-	map.handler[irq] = handler;
-	enable_irq_wake(map.linuxirq[irq]);
+	spin_unlock_irqrestore(&map.irq_lock, flags);
+	enable_irq_wake(linux_irq);
 	return 0;
 }
 
 int wcd9xxx_spmi_free_irq(int irq, void *priv)
 {
-	devm_free_irq(&map.spmi[BIT_BYTE(irq)]->dev, map.linuxirq[irq],
-						priv);
+	struct platform_device *spmi;
+	unsigned long flags;
+	int linux_irq;
+
+	if (!wcd9xxx_spmi_irq_valid(irq))
+		return -EINVAL;
+
+	spmi = map.spmi[BIT_BYTE(irq)];
+	if (!spmi)
+		return -ENODEV;
+
+	/*
+	 * Clear the callback before releasing the Linux IRQ so a pending event
+	 * cannot call a handler after its owner has been torn down.
+	 */
+	spin_lock_irqsave(&map.irq_lock, flags);
+	linux_irq = map.linuxirq[irq];
+	if (linux_irq < 0) {
+		spin_unlock_irqrestore(&map.irq_lock, flags);
+		return -EINVAL;
+	}
 	map.mask[BIT_BYTE(irq)] |= BYTE_BIT_MASK(irq);
+	WRITE_ONCE(map.handler[irq], NULL);
+	spin_unlock_irqrestore(&map.irq_lock, flags);
+
+	devm_free_irq(&spmi->dev, linux_irq, priv);
+
+	spin_lock_irqsave(&map.irq_lock, flags);
+	map.linuxirq[irq] = -1;
+	spin_unlock_irqrestore(&map.irq_lock, flags);
 	return 0;
 }
 
@@ -179,30 +269,64 @@ static int get_irq_bit(int linux_irq)
 	return i;
 }
 
-static int get_order_irq(int  i)
+#ifndef CONFIG_MACH_OPLUS_SDM710
+static int get_order_irq(int i)
 {
 	return order[i];
 }
+#endif
 
 static irqreturn_t wcd9xxx_spmi_irq_handler(int linux_irq, void *data)
 {
-	int irq, i, j;
+	int irq;
+	unsigned long flags;
+	irq_handler_t handler;
+#ifndef CONFIG_MACH_OPLUS_SDM710
+	int i, j;
 	unsigned long status[NUM_IRQ_REGS] = {0};
+#endif
+
+	irq = get_irq_bit(linux_irq);
+	if (!wcd9xxx_spmi_irq_valid(irq)) {
+		pr_warn("%s: unknown Linux IRQ %d\n", __func__, linux_irq);
+		return IRQ_NONE;
+	}
 
 	if (unlikely(wcd9xxx_spmi_lock_sleep() == false)) {
 		pr_err("Failed to hold suspend\n");
 		return IRQ_NONE;
 	}
 
-	irq = get_irq_bit(linux_irq);
-	if (irq == MAX_NUM_IRQS)
-		return IRQ_HANDLED;
+#ifdef CONFIG_MACH_OPLUS_SDM710
+	/*
+	 * The OP46B1 PM660L child IRQ is the source of truth.  Its
+	 * codec-side INT_LATCHED_STS cannot be relied on for this level-style
+	 * interrupt, so the CAF latch gate would drop the event.  Honor the
+	 * software mask and dispatch the callback identified by the Linux IRQ.
+	 */
+	spin_lock_irqsave(&map.irq_lock, flags);
+	if (map.mask[BIT_BYTE(irq)] & BYTE_BIT_MASK(irq)) {
+		spin_unlock_irqrestore(&map.irq_lock, flags);
+		pr_debug("%s: irq %d is software-masked\n", __func__, irq);
+		goto out;
+	}
+	handler = READ_ONCE(map.handler[irq]);
+	spin_unlock_irqrestore(&map.irq_lock, flags);
 
+	if (handler) {
+		if (irq == MSM89XX_IRQ_MBHC_HS_DET)
+			pr_info_ratelimited("%s: dispatch MBHC irq=%d linux_irq=%d\n",
+					__func__, irq, linux_irq);
+		handler(irq, data);
+	} else {
+		pr_warn("%s: no handler registered for irq %d\n", __func__, irq);
+	}
+#else
 	status[BIT_BYTE(irq)] |= BYTE_BIT_MASK(irq);
 	for (i = 0; i < NUM_IRQ_REGS; i++) {
 		status[i] |= snd_soc_read(map.codec,
 				BIT_BYTE(irq) * 0x100 +
-			MSM89XX_PMIC_DIGITAL_INT_LATCHED_STS);
+				MSM89XX_PMIC_DIGITAL_INT_LATCHED_STS);
 		status[i] &= ~map.mask[i];
 	}
 	for (i = 0; i < MAX_NUM_IRQS; i++) {
@@ -210,12 +334,20 @@ static irqreturn_t wcd9xxx_spmi_irq_handler(int linux_irq, void *data)
 		if ((status[BIT_BYTE(j)] & BYTE_BIT_MASK(j)) &&
 			((map.handled[BIT_BYTE(j)] &
 			BYTE_BIT_MASK(j)) == 0)) {
-			map.handler[j](irq, data);
+			handler = READ_ONCE(map.handler[j]);
+			if (!handler)
+				continue;
+			handler(irq, data);
 			map.handled[BIT_BYTE(j)] |=
 					BYTE_BIT_MASK(j);
 		}
 	}
+	spin_lock_irqsave(&map.irq_lock, flags);
 	map.handled[BIT_BYTE(irq)] &= ~BYTE_BIT_MASK(irq);
+	spin_unlock_irqrestore(&map.irq_lock, flags);
+#endif
+
+out:
 	wcd9xxx_spmi_unlock_sleep();
 
 	return IRQ_HANDLED;
@@ -388,7 +520,7 @@ void wcd9xxx_spmi_set_codec(struct snd_soc_codec *codec)
 
 void wcd9xxx_spmi_set_dev(struct platform_device *spmi, int i)
 {
-	if (i < NUM_IRQ_REGS)
+	if (spmi && i >= 0 && i < NUM_IRQ_REGS)
 		map.spmi[i] = spmi;
 }
 
@@ -396,8 +528,12 @@ int wcd9xxx_spmi_irq_init(void)
 {
 	int i = 0;
 
-	for (; i < MAX_NUM_IRQS; i++)
+	spin_lock_init(&map.irq_lock);
+	for (; i < MAX_NUM_IRQS; i++) {
 		map.mask[BIT_BYTE(i)] |= BYTE_BIT_MASK(i);
+		map.linuxirq[i] = -1;
+		WRITE_ONCE(map.handler[i], NULL);
+	}
 	mutex_init(&map.pm_lock);
 	map.wlock_holders = 0;
 	map.pm_state = WCD9XXX_PM_SLEEPABLE;

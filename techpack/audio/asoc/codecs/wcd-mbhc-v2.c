@@ -306,8 +306,14 @@ out_micb_en:
 			/* enable pullup and cs, disable mb */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
 		else
-			/* enable current source and disable mb, pullup*/
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+			/* enable the supply used for button detection */
+#ifdef CONFIG_MACH_OPLUS_SDM710
+			if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY &&
+			    mbhc->current_plug == MBHC_PLUG_TYPE_HEADSET)
+				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+			else
+#endif
+				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
 
 		/* configure cap settings properly when micbias is disabled */
 		if (mbhc->mbhc_cb->set_cap_mode)
@@ -554,8 +560,10 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 				enum snd_jack_types jack_type)
 {
 	struct snd_soc_codec *codec = mbhc->codec;
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	bool is_pa_on = false;
 	u8 fsm_en = 0;
+	#endif
 
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
 
@@ -573,8 +581,12 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 		} else if (mbhc->buttons_pressed) {
 			pr_debug("%s: release of button press%d\n",
 				 __func__, jack_type);
-			wcd_mbhc_jack_report(mbhc, &mbhc->button_jack, 0,
-					    mbhc->buttons_pressed);
+			/* BTN0/BTN1 are debounce artefacts on the OPLUS key map. */
+#ifdef CONFIG_MACH_OPLUS_SDM710
+			if (mbhc->buttons_pressed & (SND_JACK_BTN_2 | SND_JACK_BTN_3))
+#endif
+				wcd_mbhc_jack_report(mbhc, &mbhc->button_jack, 0,
+						    mbhc->buttons_pressed);
 			mbhc->buttons_pressed &=
 				~WCD_MBHC_JACK_BUTTON_MASK;
 		}
@@ -678,6 +690,7 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			pr_debug("%s: invalid Jack type %d\n",__func__, jack_type);
 		}
 
+#ifndef CONFIG_MACH_OPLUS_SDM710
 		if (mbhc->mbhc_cb->hph_pa_on_status)
 			is_pa_on = mbhc->mbhc_cb->hph_pa_on_status(codec);
 
@@ -716,14 +729,19 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 				__func__);
 			}
 		}
+#endif
 
 		mbhc->hph_status |= jack_type;
 
 		pr_debug("%s: Reporting insertion %d(%x)\n", __func__,
 			 jack_type, mbhc->hph_status);
-		wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
-				    (mbhc->hph_status | SND_JACK_MECHANICAL),
-				    WCD_MBHC_JACK_MASK);
+		#ifdef CONFIG_MACH_OPLUS_SDM710
+		/* OPLUS keeps HIGH_HPH/LINEOUT internal until it is confirmed. */
+		if (jack_type != SND_JACK_LINEOUT)
+		#endif
+			wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
+					    (mbhc->hph_status | SND_JACK_MECHANICAL),
+					    WCD_MBHC_JACK_MASK);
 		wcd_mbhc_clr_and_turnon_hph_padac(mbhc);
 	}
 	pr_debug("%s: leave hph_status %x\n", __func__, mbhc->hph_status);
@@ -849,6 +867,11 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 	struct snd_soc_codec *codec = mbhc->codec;
 	enum snd_jack_types jack_type;
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+	if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY)
+		cancel_delayed_work_sync(&mbhc->hp_detect_work);
+#endif
+
 	dev_dbg(codec->dev, "%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
 	mbhc->in_swch_irq_handler = true;
@@ -865,6 +888,11 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 
 	pr_debug("%s: mbhc->current_plug: %d detection_type: %d\n", __func__,
 			mbhc->current_plug, detection_type);
+#ifdef CONFIG_MACH_OPLUS_SDM710
+	if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY &&
+	    !detection_type)
+		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MICB_CTRL, 0);
+#endif
 	if (mbhc->mbhc_fn->wcd_cancel_hs_detect_plug)
 		mbhc->mbhc_fn->wcd_cancel_hs_detect_plug(mbhc,
 						&mbhc->correct_plug_swch);
@@ -892,6 +920,13 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 			 */
 			mbhc->mbhc_cb->micb_internal(codec, 1, true);
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+		if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY &&
+		    mbhc->mbhc_cb->set_micbias_value_switch)
+			mbhc->mbhc_cb->set_micbias_value_switch(codec,
+						       2700000);
+#endif
+
 		/* Remove micbias pulldown */
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_PULLDOWN_CTRL, 0);
 		/* Apply trim if needed on the device */
@@ -902,8 +937,16 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 			mbhc->mbhc_cb->enable_mb_source(mbhc, true);
 		mbhc->btn_press_intr = false;
 		mbhc->is_btn_press = false;
+#ifdef CONFIG_MACH_OPLUS_SDM710
+		if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY)
+			schedule_delayed_work(&mbhc->hp_detect_work,
+					msecs_to_jiffies(HP_DETECT_WORK_DELAY_MS));
+		else if (mbhc->mbhc_fn)
+			mbhc->mbhc_fn->wcd_mbhc_detect_plug_type(mbhc);
+#else
 		if (mbhc->mbhc_fn)
 			mbhc->mbhc_fn->wcd_mbhc_detect_plug_type(mbhc);
+#endif
 	} else if ((mbhc->current_plug != MBHC_PLUG_TYPE_NONE)
 			&& !detection_type) {
 		/* Disable external voltage source to micbias if present */
@@ -975,6 +1018,8 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 	int r = IRQ_HANDLED;
 	struct wcd_mbhc *mbhc = data;
 
+	pr_info_ratelimited("%s: enter irq=%d current_plug=%d\n", __func__,
+			   irq, mbhc->current_plug);
 	pr_debug("%s: enter\n", __func__);
 	if (unlikely((mbhc->mbhc_cb->lock_sleep(mbhc, true)) == false)) {
 		pr_warn("%s: failed to hold suspend\n", __func__);
@@ -985,6 +1030,8 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 		mbhc->mbhc_cb->lock_sleep(mbhc, false);
 	}
 	pr_debug("%s: leave %d\n", __func__, r);
+	pr_info_ratelimited("%s: leave irq=%d ret=%d current_plug=%d\n",
+			   __func__, irq, r, mbhc->current_plug);
 	return r;
 }
 
@@ -1147,9 +1194,10 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	 */
 	if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY &&
 		mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE) {
+#ifndef CONFIG_MACH_OPLUS_SDM710
 		wcd_mbhc_find_plug_and_report(mbhc, MBHC_PLUG_TYPE_HEADSET);
+#endif
 		goto exit;
-
 	}
 	if (mbhc->buttons_pressed & WCD_MBHC_JACK_BUTTON_MASK) {
 		ret = wcd_cancel_btn_work(mbhc);
@@ -1274,7 +1322,13 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	if (mbhc->mbhc_cb->hph_pull_up_control)
 		mbhc->mbhc_cb->hph_pull_up_control(codec, I_DEFAULT);
 	else
+#ifdef CONFIG_MACH_OPLUS_SDM710
+		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HS_L_DET_PULL_UP_CTRL,
+					 mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY ?
+					 0 : 3);
+#else
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HS_L_DET_PULL_UP_CTRL, 3);
+#endif
 
 	if (mbhc->mbhc_cfg->moisture_en && mbhc->mbhc_cb->mbhc_moisture_config)
 		mbhc->mbhc_cb->mbhc_moisture_config(mbhc);
@@ -1782,6 +1836,18 @@ void wcd_mbhc_stop(struct wcd_mbhc *mbhc)
 
 	pr_debug("%s: enter\n", __func__);
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+	if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY) {
+		cancel_delayed_work_sync(&mbhc->hp_detect_work);
+		if (mbhc->mbhc_fn && mbhc->mbhc_fn->wcd_cancel_hs_detect_plug) {
+			WCD_MBHC_RSC_LOCK(mbhc);
+			mbhc->mbhc_fn->wcd_cancel_hs_detect_plug(mbhc,
+							 &mbhc->correct_plug_swch);
+			WCD_MBHC_RSC_UNLOCK(mbhc);
+		}
+	}
+#endif
+
 	if (mbhc->current_plug != MBHC_PLUG_TYPE_NONE) {
 		if (mbhc->mbhc_cb && mbhc->mbhc_cb->skip_imped_detect)
 			mbhc->mbhc_cb->skip_imped_detect(mbhc->codec);
@@ -2109,6 +2175,10 @@ void wcd_mbhc_deinit(struct wcd_mbhc *mbhc)
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->mbhc_hs_rem_intr, mbhc);
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->hph_left_ocp, mbhc);
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->hph_right_ocp, mbhc);
+#ifdef CONFIG_MACH_OPLUS_SDM710
+	if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY)
+		cancel_delayed_work_sync(&mbhc->hp_detect_work);
+#endif
 	if (mbhc->mbhc_cb && mbhc->mbhc_cb->register_notifier)
 		mbhc->mbhc_cb->register_notifier(mbhc, &mbhc->nblock, false);
 	if (mbhc->mbhc_fn->wcd_cancel_hs_detect_plug) {
