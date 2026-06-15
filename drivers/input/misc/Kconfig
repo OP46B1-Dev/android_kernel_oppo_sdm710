@@ -407,6 +407,7 @@ config INPUT_KEYCHORD
 	  To compile this driver as a module, choose M here: the
 	  module will be called keychord.
 
+source "drivers/input/misc/oplus_fp_drivers/Kconfig"
 
 config STMVL53L0X
         tristate "STM VL53L0X Ranging Sensor"
