@@ -3834,6 +3834,41 @@ void sde_encoder_trigger_kickoff_pending(struct drm_encoder *drm_enc)
 		}
 	}
 }
+#ifdef CONFIG_MACH_OPLUS_SDM710
+extern int oppo_dimlayer_dither_threshold;
+extern int oppo_dimlayer_dither_bitdepth;
+extern int oppo_get_panel_brightness_to_alpha(void);
+extern bool sde_crtc_get_dimlayer_mode(struct drm_crtc_state *crtc_state);
+static bool _sde_encoder_setup_dither_for_onscreenfingerprint(struct sde_encoder_phys *phys,
+						  void *dither_cfg, int len)
+{
+	struct drm_encoder *drm_enc = phys->parent;
+	struct drm_msm_dither dither;
+
+	if (!drm_enc || !drm_enc->crtc)
+		return -EFAULT;
+
+	if (!sde_crtc_get_dimlayer_mode(drm_enc->crtc->state))
+		return -EINVAL;
+
+	if (len != sizeof(dither))
+		return -EINVAL;
+
+	if (oppo_get_panel_brightness_to_alpha() < oppo_dimlayer_dither_threshold)
+		return -EINVAL;
+	memcpy(&dither, dither_cfg, len);
+	dither.c0_bitdepth = 6;
+	dither.c1_bitdepth = 8;
+	dither.c2_bitdepth = 8;
+	dither.c3_bitdepth = 8;
+	dither.temporal_en = 1;
+
+	phys->hw_pp->ops.setup_dither(phys->hw_pp, &dither, len);
+
+	return 0;
+}
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 
 static void _sde_encoder_setup_dither(struct sde_encoder_phys *phys)
 {
@@ -3885,6 +3920,9 @@ static void _sde_encoder_setup_dither(struct sde_encoder_phys *phys)
 			}
 		}
 	} else {
+		#ifdef CONFIG_MACH_OPLUS_SDM710
+		if (_sde_encoder_setup_dither_for_onscreenfingerprint(phys, dither_cfg, len))
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		phys->hw_pp->ops.setup_dither(phys->hw_pp, dither_cfg, len);
 	}
 }
@@ -4126,6 +4164,9 @@ int sde_encoder_poll_line_counts(struct drm_encoder *drm_enc)
 	SDE_EVT32(DRMID(drm_enc), line_count, SDE_EVTLOG_ERROR);
 	return -ETIMEDOUT;
 }
+#ifdef CONFIG_MACH_OPLUS_SDM710
+extern int sde_connector_update_backlight(struct drm_connector *conn);
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 int sde_encoder_prepare_for_kickoff(struct drm_encoder *drm_enc,
 		struct sde_encoder_kickoff_params *params)
@@ -4162,6 +4203,10 @@ int sde_encoder_prepare_for_kickoff(struct drm_encoder *drm_enc,
 				sde_enc->cur_master);
 	else
 		ln_cnt1 = -EINVAL;
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	if (sde_enc->cur_master)
+		sde_connector_update_backlight(sde_enc->cur_master->connector);
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	/* prepare for next kickoff, may include waiting on previous kickoff */
 	SDE_ATRACE_BEGIN("enc_prepare_for_kickoff");

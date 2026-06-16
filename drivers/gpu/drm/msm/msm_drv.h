@@ -117,6 +117,9 @@ enum msm_mdp_plane_property {
 	PLANE_PROP_PREFILL_TIME,
 	PLANE_PROP_SCALER_V1,
 	PLANE_PROP_SCALER_V2,
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	PLANE_PROP_CUSTOM,
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	/* enum/bitmask properties */
 	PLANE_PROP_ROTATION,
@@ -162,6 +165,10 @@ enum msm_mdp_crtc_property {
 	CRTC_PROP_ENABLE_SUI_ENHANCEMENT,
 	CRTC_PROP_IDLE_PC_STATE,
 
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	CRTC_PROP_CUSTOM,
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 	/* total # of properties */
 	CRTC_PROP_COUNT
 };
@@ -188,6 +195,10 @@ enum msm_mdp_conn_property {
 	CONNECTOR_PROP_ROI_V1,
 	CONNECTOR_PROP_BL_SCALE,
 	CONNECTOR_PROP_AD_BL_SCALE,
+
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	CONNECTOR_PROP_CUSTOM,
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	/* enum/bitmask properties */
 	CONNECTOR_PROP_TOPOLOGY_NAME,

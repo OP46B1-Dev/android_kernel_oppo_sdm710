@@ -855,7 +855,11 @@ static void sde_encoder_phys_cmd_tearcheck_config(
 	 * disable sde hw generated TE signal, since hw TE will arrive first.
 	 * Only caveat is if due to error, we hit wrap-around.
 	 */
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	tc_cfg.sync_cfg_height = 0xFFF0;
+	#else /* CONFIG_MACH_OPLUS_SDM710 */
+	tc_cfg.sync_cfg_height = 0x0A1D;
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 	tc_cfg.vsync_init_val = mode->vdisplay;
 	tc_cfg.sync_threshold_start = DEFAULT_TEARCHECK_SYNC_THRESH_START;
 	tc_cfg.sync_threshold_continue = DEFAULT_TEARCHECK_SYNC_THRESH_CONTINUE;

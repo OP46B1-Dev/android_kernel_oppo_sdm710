@@ -656,6 +656,13 @@ enum dsi_pixel_format dsi_display_get_dst_format(void *display);
  * Return: Zero on Success
  */
 int dsi_display_cont_splash_config(void *display);
+#ifdef CONFIG_MACH_OPLUS_SDM710
+struct dsi_display *get_main_display(void);
+
+int dsi_host_alloc_cmd_tx_buffer(struct dsi_display *display);
+int dsi_display_cmd_engine_enable(struct dsi_display *display);
+int dsi_display_cmd_engine_disable(struct dsi_display *display);
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
 /*
  * dsi_display_get_panel_vfp - get panel vsync
  * @display: Pointer to private display structure

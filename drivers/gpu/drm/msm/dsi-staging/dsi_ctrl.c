@@ -83,6 +83,10 @@ static const struct of_device_id msm_dsi_of_match[] = {
 	},
 	{}
 };
+#ifdef CONFIG_MACH_OPLUS_SDM710
+static struct dsi_ctrl *global_dsi_ctrl;
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 
 static ssize_t debugfs_state_info_read(struct file *file,
 				       char __user *buff,
@@ -1158,7 +1162,18 @@ static int dsi_message_tx(struct dsi_ctrl *dsi_ctrl,
 		cmd_mem.use_lpm = (msg->flags & MIPI_DSI_MSG_USE_LPM) ?
 			true : false;
 
+		#ifdef CONFIG_MACH_OPLUS_SDM710
+		global_dsi_ctrl = dsi_ctrl;
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 		cmdbuf = (u8 *)(dsi_ctrl->vaddr);
+
+		#ifdef CONFIG_MACH_OPLUS_SDM710
+		if (cmdbuf == NULL) {
+			pr_err("dsi_message_tx and cmdbuf is null\n");
+			goto error;
+		}
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 		msm_gem_sync(dsi_ctrl->tx_cmd_buf);
 		for (cnt = 0; cnt < length; cnt++)

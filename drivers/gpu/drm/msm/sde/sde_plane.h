@@ -297,6 +297,9 @@ int sde_plane_validate_multirect_v2(struct sde_multirect_plane_states *plane);
  * @drm_state: Pointer to DRM plane state
  */
 void sde_plane_clear_multirect(const struct drm_plane_state *drm_state);
+#ifdef CONFIG_MACH_OPLUS_SDM710
+int sde_plane_check_fingerprint_layer(const struct drm_plane_state *drm_state);
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 /**
  * sde_plane_wait_input_fence - wait for input fence object
