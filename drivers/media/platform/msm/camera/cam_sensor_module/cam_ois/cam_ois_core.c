@@ -21,6 +21,127 @@
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+#include "PhoneUpdate.h"
+
+extern struct cam_ois_ctrl_t *g_ois_ctrl;
+extern UINT_8 WrGyroGain( UINT_32 ul_gain_x, UINT_32 ul_gain_y );
+extern void F40_IOWrite32A( UINT_32 IOadrs, UINT_32 IOdata );
+
+//****************************************************
+//	CUSTOMER NECESSARY CREATING FUNCTION LIST
+//****************************************************
+/* for I2C communication */
+void RamWrite32A( UINT_16 addr, UINT_32 data)
+{
+    int32_t rc = 0;
+    struct cam_sensor_i2c_reg_array i2c_write_setting = {
+    	.reg_addr = addr,
+    	.reg_data = data,
+    	.delay = 0x00,
+    	.data_mask = 0x00,
+    };
+
+    struct cam_sensor_i2c_reg_setting i2c_write = {
+    	.reg_setting = &i2c_write_setting,
+    	.size = 1,
+    	.addr_type = CAMERA_SENSOR_I2C_TYPE_WORD,
+    	.data_type = CAMERA_SENSOR_I2C_TYPE_DWORD,
+    	.delay = 0x00,
+    };
+
+	rc = camera_io_dev_write(&(g_ois_ctrl->io_master_info),
+		&i2c_write);
+
+	if (rc < 0) {
+		CAM_ERR(CAM_OIS, "write 0x%x fail", addr);
+	}
+}
+
+void RamRead32A( UINT_32 addr, UINT_32 *data)
+{
+    int32_t rc = 0;
+
+	rc = camera_io_dev_read(&(g_ois_ctrl->io_master_info), (uint32_t)addr, (uint32_t *)data,
+		CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_DWORD);
+	if (rc < 0) {
+		CAM_ERR(CAM_OIS, "read fail");
+	}
+}
+
+
+/* for I2C Multi Translation : Burst Mode*/
+void CntWrt( INT_8 *data, UINT_16 size)
+{
+    int32_t rc = 0;
+    int i = 0;
+    int reg_data_cnt = size - 2;
+    int continue_cnt = 0;
+    struct cam_sensor_i2c_reg_array *i2c_write_setting = NULL;
+    struct cam_sensor_i2c_reg_setting i2c_write;
+
+    i2c_write_setting = (struct cam_sensor_i2c_reg_array *)kzalloc( sizeof(struct cam_sensor_i2c_reg_array) * reg_data_cnt, GFP_KERNEL);
+
+    if (!i2c_write_setting) {
+        CAM_ERR(CAM_OIS, "alloc i2c_write_setting fail");
+        return;
+    }
+    memset(i2c_write_setting, 0, sizeof(struct cam_sensor_i2c_reg_array) * reg_data_cnt);
+    memset(&i2c_write, 0, sizeof(struct cam_sensor_i2c_reg_setting));
+
+    for (i = 0; i < reg_data_cnt; i++) {
+        if (i == 0) {
+            i2c_write_setting[continue_cnt].reg_addr = ((data[0] << 8) & 0xFF00) + (data[1] & 0xFF);
+            i2c_write_setting[continue_cnt].reg_data = (data[2] & 0xFF);
+            i2c_write_setting[continue_cnt].delay = 0x00;
+            i2c_write_setting[continue_cnt].data_mask = 0x00;
+        } else {
+            //i2c_write_setting[continue_cnt].reg_addr = 0x00;
+            i2c_write_setting[continue_cnt].reg_data = (data[i + 2] & 0xFF);
+            i2c_write_setting[continue_cnt].delay = 0x00;
+            i2c_write_setting[continue_cnt].data_mask = 0x00;
+        }
+        continue_cnt++;
+    }
+
+    i2c_write.reg_setting = i2c_write_setting;
+    i2c_write.size = continue_cnt;
+    i2c_write.addr_type = CAMERA_SENSOR_I2C_TYPE_WORD;
+    i2c_write.data_type = CAMERA_SENSOR_I2C_TYPE_BYTE;
+    i2c_write.delay = 0x00;
+
+	rc = camera_io_dev_write_continuous(
+		&(g_ois_ctrl->io_master_info), &i2c_write, 1);
+	if (rc < 0) {
+		CAM_ERR(CAM_OIS, "continue write fail");
+	}
+
+    if (i2c_write_setting) {
+        kfree(i2c_write_setting);
+        i2c_write_setting = NULL;
+    }
+}
+
+/*
+void CntRd3( UINT_32, void *, UINT_16 )
+{
+    return;
+}
+*/
+
+/* WPB control for LC898123F40*/
+void WPBCtrl( UINT_8 ctrl)
+{
+    return;
+}
+
+/* for Wait timer [Need to adjust for your system] */
+void WitTim( UINT_16 delay)
+{
+    msleep(delay);
+}
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 int32_t cam_ois_construct_default_power_setting(
 	struct cam_sensor_power_ctrl_t *power_info)
 {

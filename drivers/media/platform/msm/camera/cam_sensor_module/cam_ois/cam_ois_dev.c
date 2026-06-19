@@ -16,6 +16,10 @@
 #include "cam_ois_core.h"
 #include "cam_debug_util.h"
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+struct cam_ois_ctrl_t *g_ois_ctrl = NULL;
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 static long cam_ois_subdev_ioctl(struct v4l2_subdev *sd,
 	unsigned int cmd, void *arg)
 {
