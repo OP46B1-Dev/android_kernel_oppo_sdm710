@@ -502,4 +502,45 @@ struct cam_ir_led_set_on_off {
 	uint32_t    ir_led_intensity;
 } __attribute__((packed));
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+#define FD_DFCT_MAX_NUM 5
+#define SG_DFCT_MAX_NUM 299
+
+struct sony_dfct_tbl_t {
+	//---- single static defect ----
+	int sg_dfct_num;    	// the number of single static defect
+	int sg_dfct_addr[SG_DFCT_MAX_NUM];    	// [ u25 ( upper-u13 = x-addr, lower-u12 = y-addr ) ]
+	//---- FD static defect ----
+	int fd_dfct_num;    	// the number of FD static defect
+	int fd_dfct_addr[FD_DFCT_MAX_NUM];    	// [ u25 ( upper-u13 = x-addr, lower-u12 = y-addr ) ]
+} __attribute__ ((packed));
+
+#define CALIB_DATA_LENGTH         1561
+#define WRITE_DATA_MAX_LENGTH     8
+#define WRITE_DATA_DELAY          5
+
+struct cam_write_eeprom_t {
+	uint32_t cam_id;
+	uint32_t baseAddr;
+	uint32_t calibDataSize;
+	uint32_t isWRP;
+	uint32_t WRPaddr;
+	unsigned char calibData[CALIB_DATA_LENGTH];
+} __attribute__ ((packed));
+
+#define EEPROM_SN_SIZE 17
+struct read_eeprom_SN_t{
+	uint32_t cam_id;
+	uint32_t baseAddr;
+	uint32_t SNSize;
+	unsigned char eepromSN[EEPROM_SN_SIZE];
+} __attribute__ ((packed));
+#define EEPROM_CHECK_DATA_MAX_SIZE 196
+struct check_eeprom_data_t{
+	uint32_t cam_id;
+	uint32_t startAddr;
+	uint32_t eepromData_checksum;
+} __attribute__ ((packed));
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 #endif

@@ -334,6 +334,9 @@ static int cam_cci_platform_probe(struct platform_device *pdev)
 		CAM_CCI_DEVICE_TYPE;
 	new_cci_dev->v4l2_dev_str.token =
 		new_cci_dev;
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	mutex_init(&new_cci_dev->cci_lock);
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	rc = cam_register_subdev(&(new_cci_dev->v4l2_dev_str));
 	if (rc < 0) {
@@ -377,6 +380,9 @@ static int cam_cci_device_remove(struct platform_device *pdev)
 	struct v4l2_subdev *subdev = platform_get_drvdata(pdev);
 	struct cci_device *cci_dev =
 		v4l2_get_subdevdata(subdev);
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	mutex_destroy(&cci_dev->cci_lock);
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	cam_cpas_unregister_client(cci_dev->cpas_handle);
 	cam_cci_soc_remove(pdev, cci_dev);

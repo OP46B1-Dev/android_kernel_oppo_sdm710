@@ -26,7 +26,12 @@
 #define CAM_ISP_PATTERN_YUV_YCRYCB              5
 #define CAM_ISP_PATTERN_YUV_CBYCRY              6
 #define CAM_ISP_PATTERN_YUV_CRYCBY              7
+#ifndef CONFIG_MACH_OPLUS_SDM710
 #define CAM_ISP_PATTERN_MAX                     8
+#else /* CONFIG_MACH_OPLUS_SDM710 */
+#define CAM_ISP_PATTERN_BAYER_Y                 8
+#define CAM_ISP_PATTERN_MAX                     9
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 /* Usage Type */
 #define CAM_ISP_RES_USAGE_SINGLE                0

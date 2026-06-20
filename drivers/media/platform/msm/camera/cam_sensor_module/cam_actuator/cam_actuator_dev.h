@@ -125,6 +125,10 @@ struct cam_actuator_ctrl_t {
 	struct i2c_data_settings i2c_data;
 	struct cam_actuator_query_cap act_info;
 	struct intf_params bridge_intf;
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	struct cam_actuator_ctrl_t *piris_ctrl;
+	uint8_t is_check_firmware_update;
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 };
 
 #endif /* _CAM_ACTUATOR_DEV_H_ */

@@ -18,6 +18,10 @@
 #include <cam_req_mgr_util.h>
 #include "cam_sensor_soc.h"
 #include "cam_soc_util.h"
+#ifdef CONFIG_MACH_OPLUS_SDM710
+#include <soc/oplus/oplus_project.h>
+#include <soc/oplus/device_info.h>
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 int32_t cam_sensor_get_sub_module_index(struct device_node *of_node,
 	struct cam_sensor_board_info *s_info)
@@ -198,6 +202,21 @@ static int32_t cam_sensor_driver_get_dt_data(struct cam_sensor_ctrl_t *s_ctrl)
 			rc = 0;
 		}
 	}
+
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	if (get_project() == OPPO_18181
+		&& (get_Modem_Version() == 7)) {
+		sensordata->watchdog_gpio = of_get_named_gpio(of_node, "watchdog-gpio", 0);
+		if (!gpio_is_valid(sensordata->watchdog_gpio)) {
+			CAM_ERR(CAM_SENSOR, "invalid watchdog_gpio %d", sensordata->watchdog_gpio);
+			sensordata->watchdog_gpio = -1;
+		} else {
+			CAM_INFO(CAM_SENSOR, "watchdog_gpio %d", sensordata->watchdog_gpio);
+		}
+	} else {
+		sensordata->watchdog_gpio = -1;
+	}
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	if (of_property_read_u32(of_node, "sensor-position-pitch",
 		&sensordata->pos_pitch) < 0) {

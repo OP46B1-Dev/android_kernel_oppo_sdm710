@@ -153,6 +153,21 @@ enum msm_camera_power_seq_type {
 	SENSOR_SEQ_TYPE_MAX,
 };
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+enum cam_sensor_i2creg_type {
+    SENSOR_INIT,
+    SENSOR_RES,
+    SENSOR_START,
+    SENSOR_STOP,
+    SENSOR_MASTER,
+    SENSOR_SLAVE,
+    SENSOR_AEC,
+    SENSOR_SPC,
+    SENSOR_PDAF,
+    SENSOR_AWB,
+};
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 enum cam_sensor_packet_opcodes {
 	CAM_SENSOR_PACKET_OPCODE_SENSOR_STREAMON,
 	CAM_SENSOR_PACKET_OPCODE_SENSOR_UPDATE,
@@ -276,6 +291,9 @@ struct i2c_settings_list {
 	struct cam_sensor_i2c_reg_setting i2c_settings;
 	enum cam_sensor_i2c_cmd_type op_code;
 	struct list_head list;
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	uint32_t resident;
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 };
 
 struct i2c_settings_array {
@@ -308,6 +326,12 @@ struct cam_camera_slave_info {
 	uint16_t sensor_id_reg_addr;
 	uint16_t sensor_id;
 	uint16_t sensor_id_mask;
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	uint16_t eeprom_slave_addr;
+	uint16_t vendor_id;
+	uint16_t camera_id;
+	uint16_t sensor_version;
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 };
 
 struct msm_sensor_init_params {
@@ -358,6 +382,9 @@ struct cam_sensor_board_info {
 	int32_t  subdev_intf[SUB_MODULE_MAX];
 	const char *misc_regulator;
 	struct cam_sensor_power_ctrl_t power_info;
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	int32_t watchdog_gpio;
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 };
 
 enum msm_camera_vreg_name_t {

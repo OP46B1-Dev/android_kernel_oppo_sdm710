@@ -1614,6 +1614,9 @@ int32_t cam_cci_core_cfg(struct v4l2_subdev *sd,
 	}
 
 	CAM_DBG(CAM_CCI, "cmd %d", cci_ctrl->cmd);
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	mutex_lock(&cci_dev->cci_lock);
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 	switch (cci_ctrl->cmd) {
 	case MSM_CCI_INIT:
 		mutex_lock(&cci_dev->init_mutex);
@@ -1648,5 +1651,8 @@ int32_t cam_cci_core_cfg(struct v4l2_subdev *sd,
 
 	cci_ctrl->status = rc;
 
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	mutex_unlock(&cci_dev->cci_lock);
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 	return rc;
 }

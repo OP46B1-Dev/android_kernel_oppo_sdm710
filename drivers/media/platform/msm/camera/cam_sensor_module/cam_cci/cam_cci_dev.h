@@ -68,7 +68,11 @@
 /* Max bytes that can be read per CCI read transaction */
 #define CCI_READ_MAX 256
 #define CCI_I2C_READ_MAX_RETRIES 3
+#ifndef CONFIG_MACH_OPLUS_SDM710
 #define CCI_I2C_MAX_READ 8192
+#else /* CONFIG_MACH_OPLUS_SDM710 */
+#define CCI_I2C_MAX_READ 16384
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
 #define CCI_I2C_MAX_WRITE 8192
 #define CCI_I2C_MAX_BYTE_COUNT 65535
 
@@ -207,6 +211,9 @@ struct cci_device {
 	struct cam_hw_soc_info soc_info;
 	uint32_t hw_version;
 	uint8_t ref_count;
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	struct mutex cci_lock;
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 	enum cam_cci_state_t cci_state;
 	struct cam_cci_i2c_queue_info
 		cci_i2c_queue_info[NUM_MASTERS][NUM_QUEUES];

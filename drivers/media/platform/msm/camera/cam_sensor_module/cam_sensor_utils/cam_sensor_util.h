@@ -39,6 +39,12 @@ int cam_sensor_i2c_command_parser(struct camera_io_master *io_master,
 	struct i2c_settings_array *i2c_reg_settings,
 	struct cam_cmd_buf_desc *cmd_desc, int32_t num_cmd_buffers);
 
+#ifdef CONFIG_MACH_OPLUS_SDM710
+int cam_sensor_i2c_command_parser_vendor(struct camera_io_master *io_master,
+	struct i2c_settings_array *i2c_reg_settings,
+	struct cam_cmd_buf_desc *cmd_desc, int32_t num_cmd_buffers, uint16_t vendor_mode);
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 int cam_sensor_util_i2c_apply_setting(struct camera_io_master *io_master_info,
 	struct i2c_settings_list *i2c_list);
 

@@ -12,10 +12,19 @@
  */
 
 #include <linux/module.h>
+#ifdef CONFIG_MACH_OPLUS_SDM710
+#include <linux/proc_fs.h>
+#include <linux/time.h>
+#include <linux/rtc.h>
+static struct cam_flash_ctrl *vendor_flash_ctrl[2] = {NULL,NULL};
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
 #include "cam_flash_dev.h"
 #include "cam_flash_soc.h"
 #include "cam_flash_core.h"
 #include "cam_common_util.h"
+#ifdef CONFIG_MACH_OPLUS_SDM710
+#include "cam_res_mgr_api.h"
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 		void *arg, struct cam_flash_private_soc *soc_private)
@@ -54,8 +63,17 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 
 		if (fctrl->bridge_intf.device_hdl != -1) {
 			CAM_ERR(CAM_FLASH, "Device is already acquired");
+			#ifdef CONFIG_MACH_OPLUS_SDM710
+			rc = cam_flash_release_dev(fctrl);
+			if (rc)
+				CAM_ERR(CAM_FLASH,
+					"Failed in destroying the device Handle rc= %d",
+					rc);
+			fctrl->flash_state = CAM_FLASH_STATE_INIT;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
 			rc = -EINVAL;
 			goto release_mutex;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		}
 
 		rc = copy_from_user(&flash_acq_dev,
@@ -199,6 +217,163 @@ release_mutex:
 	mutex_unlock(&(fctrl->flash_mutex));
 	return rc;
 }
+
+#ifdef CONFIG_MACH_OPLUS_SDM710
+volatile static int flash_mode;
+volatile static int pre_flash_mode;
+static ssize_t flash_on_off(int is_back_flash)
+{
+	int rc=0;
+	struct timespec ts;
+	struct rtc_time tm;
+	struct cam_flash_frame_setting flash_data;
+	int i, flash_index = 0;
+	memset(&flash_data, 0, sizeof(flash_data));
+    for (i = 0; i < 2; i++ ) {
+        if (vendor_flash_ctrl[i] != NULL && vendor_flash_ctrl[i]->flash_name != NULL) {
+            if (strcmp(vendor_flash_ctrl[i]->flash_name, "pmic0") == 0 && is_back_flash == 1) {
+                flash_index = 0;
+                break;
+            }
+            else if (strcmp(vendor_flash_ctrl[i]->flash_name, "pmic1") == 0 && is_back_flash == 0) {
+                flash_index = 1;
+                break;
+            }
+        }
+    }
+	pr_err("flash_index is = %d\n",flash_index);
+	getnstimeofday(&ts);
+	rtc_time_to_tm(ts.tv_sec, &tm);
+	pr_info("flash_mode %d,%d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
+		flash_mode,
+		tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+		tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
+
+	if (!vendor_flash_ctrl[flash_index] || !vendor_flash_ctrl[flash_index]->flash_name) {
+	   pr_err("vendor_flash_ctrl || flash_name is NULL");
+	   return -EINVAL;
+	}
+	#if 0
+	/*maybe need to modify when add some other flash*/
+	if (strcmp(vendor_flash_ctrl[flash_index]->flash_name, "pmic") != 0) {
+	   pr_err("if not pmic flash, need to return");
+	}
+	#endif
+	if (pre_flash_mode == flash_mode) {
+	    pr_err("pre_flash_mode is same as flash_mode,return here");
+	    return -EINVAL;
+	}
+	if(pre_flash_mode == 5 && flash_mode == 0){
+		pr_err("camera is opened,not to set flashlight off");
+		return 0;
+	}
+
+	pre_flash_mode = flash_mode;
+
+	switch (flash_mode)
+	{
+		case 0:
+			flash_data.led_current_ma[0] = 0;
+			flash_data.led_current_ma[1] = 0;
+			cam_flash_off(vendor_flash_ctrl[flash_index]);
+			vendor_flash_ctrl[flash_index]->flash_state = CAM_FLASH_STATE_INIT;
+			break;
+		case 1:
+			if (vendor_flash_ctrl[flash_index]->flash_num_sources >= 2){
+			    flash_data.led_current_ma[0] = 60;
+			    flash_data.led_current_ma[1] = 60;
+			} else {
+			    flash_data.led_current_ma[0] = 100;
+			    flash_data.led_current_ma[1] = 100;
+			}
+			cam_flash_on(vendor_flash_ctrl[flash_index], &flash_data, 0);
+			break;
+		case 2:
+			flash_data.led_current_ma[0] = 1000;
+			flash_data.led_current_ma[1] = 1000;
+			cam_flash_on(vendor_flash_ctrl[flash_index], &flash_data, 1);
+			break;
+		case 3: {
+			if (!is_back_flash) {
+				flash_data.led_current_ma[0] = 150;
+				flash_data.led_current_ma[1] = 150;
+			} else {
+				flash_data.led_current_ma[0] = 50;
+				flash_data.led_current_ma[1] = 50;
+			}
+			cam_flash_on(vendor_flash_ctrl[flash_index], &flash_data, 0);
+			break;
+		}
+		default:
+			break;
+	}
+	return rc;;
+}
+
+static ssize_t flash_proc_write(struct file *filp, const char __user *buff,
+                        	size_t len, loff_t *data)
+{
+	char buf[8] = {0};
+	int rc = 0;
+	int is_back_flash ;
+	int flash_mode_index;
+
+	if (len > 8)
+		len = 8;
+	if (copy_from_user(buf, buff, len)) {
+		pr_err("proc write error.\n");
+		return -EFAULT;
+	}
+	flash_mode_index = simple_strtoul(buf, NULL, 10);
+	if (flash_mode_index == 23 || flash_mode_index == 20){
+		flash_mode = flash_mode_index - 20;
+		is_back_flash = 0;
+	}else{
+		flash_mode = flash_mode_index;
+		is_back_flash = 1;
+	}
+
+	rc = flash_on_off(is_back_flash);
+	if(rc < 0)
+		pr_err("%s flash write failed %d\n", __func__, __LINE__);
+	return len;
+}
+static ssize_t flash_proc_read(struct file *filp, char __user *buff,
+                        	size_t len, loff_t *data)
+{
+	char value[2] = {0};
+	snprintf(value, sizeof(value), "%d", flash_mode);
+	return simple_read_from_buffer(buff, len, data, value,1);
+}
+
+static const struct file_operations led_fops = {
+    .owner		= THIS_MODULE,
+    .read		= flash_proc_read,
+    .write		= flash_proc_write,
+};
+static int flash_proc_init(struct cam_flash_ctrl *flash_ctl)
+{
+	int ret = 0;
+	char proc_flash[16] = "qcom_flash";
+	char strtmp[] = "0";
+	struct proc_dir_entry *proc_entry;
+	if (flash_ctl->soc_info.index > 0) {
+		sprintf(strtmp, "%d", flash_ctl->soc_info.index);
+		strcat(proc_flash, strtmp);
+	}
+	proc_entry = proc_create_data(proc_flash, 0666, NULL,&led_fops, NULL);
+	if (proc_entry == NULL) {
+		ret = -ENOMEM;
+		pr_err("[%s]: Error! Couldn't create qcom_flash proc entry\n", __func__);
+	}
+	if (flash_ctl->soc_info.index < 2){
+	   if (vendor_flash_ctrl[flash_ctl->soc_info.index] == NULL){
+	      vendor_flash_ctrl[flash_ctl->soc_info.index] = flash_ctl;
+	   }
+	}
+	return ret;
+}
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 static int32_t cam_flash_init_default_params(struct cam_flash_ctrl *fctrl)
 {
@@ -484,6 +659,9 @@ static int32_t cam_flash_platform_probe(struct platform_device *pdev)
 	mutex_init(&(fctrl->flash_mutex));
 
 	fctrl->flash_state = CAM_FLASH_STATE_INIT;
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	flash_proc_init(fctrl);
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 	CAM_DBG(CAM_FLASH, "Probe success");
 	return rc;
 
