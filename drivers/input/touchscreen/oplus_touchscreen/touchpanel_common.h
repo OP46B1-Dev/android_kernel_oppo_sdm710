@@ -964,6 +964,8 @@ __attribute__((weak)) int opticalfp_irq_handler(struct fp_underscreen_info* fp_t
 __attribute__((weak)) int notify_display_fpd(bool mode) {
     return 0;
 }
+__attribute__((weak)) void oplus_display_set_fp_state(int state) {
+}
 __attribute__((weak)) int get_lcd_status(void) {
     return 0;
 }

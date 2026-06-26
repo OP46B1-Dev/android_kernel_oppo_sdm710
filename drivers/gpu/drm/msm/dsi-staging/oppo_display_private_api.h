@@ -35,4 +35,9 @@
 #include <linux/init.h>
 #include <drm/drm_mipi_dsi.h>
 #include <linux/dsi_oppo_support.h>
+
+/* Screen-off fingerprint trigger state (see /sys/kernel/oppo_display/fp_state) */
+extern int oplus_fp_state;
+void oplus_display_set_fp_state(int state);
+
 #endif /* _OPPO_DISPLAY_PRIVATE_API_H_ */

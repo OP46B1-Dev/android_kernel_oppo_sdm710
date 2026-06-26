@@ -447,6 +447,7 @@ static void tp_gesture_handle(struct touchpanel_data* ts) {
         }
         opticalfp_irq_handler(&ts->fp_info);
         notify_display_fpd(true);
+        oplus_display_set_fp_state(1);
     } else if (gesture_info_temp.gesture_type == FingerprintUp) {
         ts->fp_info.touch_state = 0;
         if (ts->screenoff_fingerprint_info_support) {
@@ -455,6 +456,7 @@ static void tp_gesture_handle(struct touchpanel_data* ts) {
         }
         opticalfp_irq_handler(&ts->fp_info);
         notify_display_fpd(false);
+        oplus_display_set_fp_state(0);
     }
 }
 

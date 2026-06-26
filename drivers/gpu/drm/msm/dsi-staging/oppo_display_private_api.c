@@ -2524,6 +2524,32 @@ static DEVICE_ATTR(notify_fppress, S_IRUGO|S_IWUSR, NULL, oppo_display_notify_fp
 static DEVICE_ATTR(aod_light_mode_set, S_IRUGO|S_IWUSR, oppo_get_aod_light_mode, oppo_set_aod_light_mode);
 
 /*
+ * Screen-off fingerprint trigger state.
+ *
+ * The touchpanel driver, while suspended in gesture mode, detects a finger
+ * landing on the UDFPS icon and calls oplus_display_set_fp_state(1). The value
+ * is exposed read-only here so the sensor HAL can poll() it (POLLPRI/POLLERR via
+ * sysfs_notify) and report a UDFPS one-shot event to wake up the framework
+ * UdfpsController even when the panel is off.
+ */
+int oplus_fp_state = 0;
+
+static ssize_t oppo_display_get_fp_state(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", oplus_fp_state);
+}
+
+void oplus_display_set_fp_state(int state)
+{
+	oplus_fp_state = state ? 1 : 0;
+	if (oppo_display_kobj)
+		sysfs_notify(oppo_display_kobj, NULL, "fp_state");
+}
+
+static DEVICE_ATTR(fp_state, S_IRUGO, oppo_display_get_fp_state, NULL);
+
+/*
  * Create a group of attributes so that we can create and destroy them all
  * at once.
  */
@@ -2552,6 +2578,7 @@ static struct attribute *oppo_display_attrs[] = {
 	&dev_attr_ffl_set.attr,
 	&dev_attr_notify_fppress.attr,
 	&dev_attr_aod_light_mode_set.attr,
+	&dev_attr_fp_state.attr,
 	NULL,	/* need to NULL terminate the list of attributes */
 };
 
