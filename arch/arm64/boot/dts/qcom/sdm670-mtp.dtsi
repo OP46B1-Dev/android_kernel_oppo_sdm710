@@ -13,7 +13,9 @@
 #include <dt-bindings/gpio/gpio.h>
 #include "sdm670-pmic-overlay.dtsi"
 #include "sdm670-sde-display.dtsi"
+#ifndef CONFIG_MACH_OPLUS_SDM710
 #include "sdm670-camera-sensor-mtp.dtsi"
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 &qupv3_se10_i2c {
 #include "smb1355.dtsi"
@@ -64,6 +66,7 @@
 	status = "disabled";
 };
 
+#ifndef CONFIG_MACH_OPLUS_SDM710
 &qupv3_se3_i2c {
 	status = "ok";
 	nq@28 {
@@ -87,6 +90,7 @@
 		clock-names = "ref_clk";
 	};
 };
+#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 &qupv3_se10_i2c {
 	status = "ok";
@@ -195,15 +199,30 @@
 };
 
 &soc {
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	devinfo {
+		compatible = "oplus-devinfo";
+		qcom,devinfo-vadc = <&pm660_vadc>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&sub_mainboard_active>;
+	};
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 	gpio_keys {
 		compatible = "gpio-keys";
 		label = "gpio-keys";
 
 		pinctrl-names = "default";
+		#ifndef CONFIG_MACH_OPLUS_SDM710
 		pinctrl-0 = <&key_cam_snapshot_default
 			     &key_cam_focus_default
 			     &key_vol_up_default>;
+		#else /* CONFIG_MACH_OPLUS_SDM710 */
+		pinctrl-0 = <&key_vol_up_default
+			     &key_vol_down_default>;
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
+		#ifndef CONFIG_MACH_OPLUS_SDM710
 		cam_snapshot {
 			label = "cam_snapshot";
 			gpios = <&tlmm 91 GPIO_ACTIVE_LOW>;
@@ -223,16 +242,33 @@
 			debounce-interval = <15>;
 			linux,can-disable;
 		};
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 		vol_up {
 			label = "volume_up";
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			gpios = <&pm660l_gpios 7 GPIO_ACTIVE_LOW>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 			linux,input-type = <1>;
 			linux,code = <115>;
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 			linux,can-disable;
 		};
+
+		#ifdef CONFIG_MACH_OPLUS_SDM710
+		vol_down {
+			label = "volume_down";
+			gpios = <&tlmm 92 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <114>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 	};
 };
 

@@ -56,5 +56,16 @@
 			qcom,ion-heap-type = "DMA";
 		};
 
+		#ifdef CONFIG_MACH_OPLUS_SDM710
+		qcom,ion-heap@14 { /* ION_FLAG_CP_CDSP */
+			reg = <14>;
+			qcom,ion-heap-type = "SECURE_CARVEOUT";
+			node1 {
+				memory-region = <&secure_dsp_mem>;
+				token = <0x20000000>;
+			};
+		};
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 	};
 };

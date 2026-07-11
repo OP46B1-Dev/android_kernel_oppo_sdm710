@@ -152,19 +152,27 @@
 			   "analog-codec", "msm_sdw_codec",
 			   "msm-ext-disp-audio-codec-rx";
 
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	qcom,wsa-max-devs = <2>;
 	qcom,wsa-devs = <&wsa881x_211_en>, <&wsa881x_212_en>,
 			<&wsa881x_213_en>, <&wsa881x_214_en>;
 	qcom,wsa-aux-dev-prefix = "SpkrLeft", "SpkrRight",
 				  "SpkrLeft", "SpkrRight";
+	#else /* CONFIG_MACH_OPLUS_SDM710 */
+	qcom,wsa-disable;
+	qcom,wsa-max-devs = <0>;
+	qcom,sec-mi2s-gpios = <&sec_mi2s_gpios>;
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 };
 
 &soc {
 	wcd_usbc_analog_en1_gpio: msm_cdc_pinctrl_usbc_audio_en1 {
 		compatible = "qcom,msm-cdc-pinctrl";
+		#ifndef CONFIG_MACH_OPLUS_SDM710
 		pinctrl-names = "aud_active", "aud_sleep";
 		pinctrl-0 = <&wcd_usbc_analog_en1_active>;
 		pinctrl-1 = <&wcd_usbc_analog_en1_idle>;
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 	};
 
 	cdc_pdm_gpios: cdc_pdm_pinctrl {
@@ -204,7 +212,20 @@
 		pinctrl-1 = <&sdw_clk_sleep &sdw_data_sleep>;
 	};
 
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	sec_mi2s_gpios: sec_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&sec_mi2s_bclk_active &sec_mi2s_ws_active &sec_mi2s_sd0_active>;
+		pinctrl-1 = <&sec_mi2s_bclk_sleep &sec_mi2s_ws_sleep &sec_mi2s_sd0_sleep>;
+		qcom,lpi-gpios;
+	};
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 	wsa_spkr_en1: wsa_spkr_en1_pinctrl {
+		#ifdef CONFIG_MACH_OPLUS_SDM710
+		status = "disabled";
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		compatible = "qcom,msm-cdc-pinctrl";
 		pinctrl-names = "aud_active", "aud_sleep";
 		pinctrl-0 = <&spkr_1_sd_n_active>;
@@ -212,6 +233,9 @@
 	};
 
 	wsa_spkr_en2: wsa_spkr_en2_pinctrl {
+		#ifdef CONFIG_MACH_OPLUS_SDM710
+		status = "disabled";
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		compatible = "qcom,msm-cdc-pinctrl";
 		pinctrl-names = "aud_active", "aud_sleep";
 		pinctrl-0 = <&spkr_2_sd_n_active>;
@@ -219,7 +243,11 @@
 	};
 
 	msm_sdw_codec: msm-sdw-codec@62ec1000 {
+		#ifndef CONFIG_MACH_OPLUS_SDM710
 		status = "okay";
+		#else /* CONFIG_MACH_OPLUS_SDM710 */
+		status = "disabled";
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		compatible = "qcom,msm-sdw-codec";
 		reg = <0x62ec1000 0x0>;
 		interrupts = <0 88 0>;

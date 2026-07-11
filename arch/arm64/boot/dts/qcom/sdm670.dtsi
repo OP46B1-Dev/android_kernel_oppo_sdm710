@@ -449,12 +449,20 @@
 	firmware: firmware {
 		android {
 			compatible = "android,firmware";
+			#ifdef CONFIG_MACH_OPLUS_SDM710
+			boot_devices = "soc/1d84000.ufshc";
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 			vbmeta {
 				compatible = "android,vbmeta";
+				#ifndef CONFIG_MACH_OPLUS_SDM710
 				parts = "vbmeta,boot,system,vendor,dtbo";
+				#else /* CONFIG_MACH_OPLUS_SDM710 */
+				parts = "vbmeta,boot,dtbo";
+				#endif /* CONFIG_MACH_OPLUS_SDM710 */
 			};
 
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			fstab {
 				compatible = "android,fstab";
 				vendor {
@@ -466,6 +474,7 @@
 					status = "ok";
 				};
 			};
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 	};
 
@@ -489,7 +498,11 @@
 		removed_region: removed_region@85fc0000 {
 			compatible = "removed-dma-pool";
 			no-map;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			reg = <0 0x85fc0000 0 0x2f40000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			reg = <0 0x85fc0000 0 0x4940000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		pil_camera_mem: camera_region@8ab00000 {
@@ -501,55 +514,91 @@
 		pil_modem_mem: modem_region@8b000000 {
 			compatible = "removed-dma-pool";
 			no-map;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			reg = <0 0x8b000000 0 0x7e00000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			reg = <0 0x8b000000 0 0x9600000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		pil_video_mem: pil_video_region@92e00000 {
 			compatible = "removed-dma-pool";
 			no-map;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			reg = <0 0x92e00000 0 0x500000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			reg = <0 0x94600000 0 0x500000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		wlan_msa_mem: wlan_msa_region@93300000 {
 			compatible = "removed-dma-pool";
 			no-map;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			reg = <0 0x93300000 0 0x100000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			reg = <0 0x94b00000 0 0x100000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		pil_cdsp_mem: cdsp_regions@93400000 {
 			compatible = "removed-dma-pool";
 			no-map;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			reg = <0 0x93400000 0 0x800000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			reg = <0 0x94c00000 0 0x1e00000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		pil_mba_mem: pil_mba_region@0x93c00000 {
 			compatible = "removed-dma-pool";
 			no-map;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			reg = <0 0x93c00000 0 0x200000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			reg = <0 0x96a00000 0 0x200000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		pil_adsp_mem: pil_adsp_region@93e00000 {
 			compatible = "removed-dma-pool";
 			no-map;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			reg = <0 0x93e00000 0 0x1e00000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			reg = <0 0x96c00000 0 0x1e00000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		pil_ipa_fw_mem: ips_fw_region@0x95c00000 {
 			compatible = "removed-dma-pool";
 			no-map;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			reg = <0 0x95c00000 0 0x10000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			reg = <0 0x98a00000 0 0x10000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		pil_ipa_gsi_mem: ipa_gsi_region@0x95c10000 {
 			compatible = "removed-dma-pool";
 			no-map;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			reg = <0 0x95c10000 0 0x5000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			reg = <0 0x98a10000 0 0x5000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		pil_gpu_mem: gpu_region@0x95c15000 {
 			compatible = "removed-dma-pool";
 			no-map;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			reg = <0 0x95c15000 0 0x2000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			reg = <0 0x98a15000 0 0x2000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		qseecom_mem: qseecom_region@0x9e400000 {
@@ -557,6 +606,14 @@
 			no-map;
 			reg = <0 0x9e400000 0 0x1400000>;
 		};
+
+		#ifdef CONFIG_MACH_OPLUS_SDM710
+		secure_dsp_mem: secure_dsp_region@0x9f800000 {
+			compatible = "removed-dma-pool";
+			no-map;
+			reg = <0 0x9f800000 0 0xc00000>;
+		};
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 		adsp_mem: adsp_region {
 			compatible = "shared-dma-pool";
@@ -571,7 +628,11 @@
 			alloc-ranges = <0 0x00000000 0 0xffffffff>;
 			reusable;
 			alignment = <0 0x400000>;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			size = <0 0x800000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			size = <0 0x400000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		qseecom_ta_mem: qseecom_ta_region {
@@ -595,7 +656,11 @@
 			alloc-ranges = <0 0x00000000 0 0xffffffff>;
 			reusable;
 			alignment = <0 0x400000>;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			size = <0 0xd000000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			size = <0 0x5c00000>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		};
 
 		cont_splash_memory: cont_splash_region@9c000000 {
@@ -613,6 +678,18 @@
 			reusable;
 			size = <0 0x2400000>;
 		};
+
+		#ifdef CONFIG_MACH_OPLUS_SDM710
+		ramoops: ramoops@b0000000 {
+			compatible = "ramoops";
+			reg = <0 0xb0000000 0 0x00400000>;
+			record-size = <0x40000>; /* 256x1024 */
+			console-size = <0x40000>;
+			ftrace-size = <0x40000>;
+			pmsg-size = <0x200000>;
+			ecc-size = <0x0>;
+		};
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 		/* global autoconfigured region for contiguous allocations */
 		linux,cma {
@@ -788,7 +865,9 @@
 			compatible = "qcom,memshare-peripheral";
 			qcom,peripheral-size = <0x500000>;
 			qcom,client-id = <1>;
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			qcom,allocate-boot-time;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 			label = "modem";
 		};
 	};
@@ -869,6 +948,7 @@
 			 <&apps_smmu 0x714 0x1>;
 	};
 
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	qcom,qbt1000 {
 		compatible = "qcom,qbt1000";
 		clock-names = "core", "iface";
@@ -876,10 +956,15 @@
 		qcom,ipc-gpio = <&tlmm 121 0>;
 		qcom,finger-detect-gpio = <&tlmm 122 0>;
 	};
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	qcom_seecom: qseecom@86d00000 {
 		compatible = "qcom,qseecom";
+		#ifndef CONFIG_MACH_OPLUS_SDM710
 		reg = <0x86d00000 0x2200000>;
+		#else /* CONFIG_MACH_OPLUS_SDM710 */
+		reg = <0x86d00000 0x3c00000>;
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		reg-names = "secapp-region";
 		qcom,hlos-num-ce-hw-instances = <1>;
 		qcom,hlos-ce-hw-instance = <0>;

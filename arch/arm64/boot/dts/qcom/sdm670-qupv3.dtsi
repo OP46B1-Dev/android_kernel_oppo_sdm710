@@ -51,6 +51,7 @@
 		qcom,wrapper-core = <&qupv3_0>;
 	};
 
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	qupv3_se7_4uart: qcom,qup_uart@0x89c000 {
 		compatible = "qcom,msm-geni-serial-hs";
 		reg = <0x89c000 0x4000>;
@@ -68,6 +69,7 @@
 		qcom,wakeup-byte = <0xFD>;
 		qcom,wrapper-core = <&qupv3_0>;
 	};
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	/* I2C */
 	qupv3_se0_i2c: i2c@880000 {
@@ -110,6 +112,7 @@
 		status = "disabled";
 	};
 
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	qupv3_se2_i2c: i2c@888000 {
 		compatible = "qcom,i2c-geni";
 		reg = <0x888000 0x4000>;
@@ -129,6 +132,7 @@
 		qcom,wrapper-core = <&qupv3_0>;
 		status = "disabled";
 	};
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	qupv3_se3_i2c: i2c@88c000 {
 		compatible = "qcom,i2c-geni";
@@ -167,7 +171,25 @@
 		pinctrl-0 = <&qupv3_se4_i2c_active>;
 		pinctrl-1 = <&qupv3_se4_i2c_sleep>;
 		qcom,wrapper-core = <&qupv3_0>;
+		#ifndef CONFIG_MACH_OPLUS_SDM710
 		status = "disabled";
+		#else /* CONFIG_MACH_OPLUS_SDM710 */
+		status = "okay";
+
+		ak4376@10 {
+			compatible = "akm,ak4376";
+			reg = <0x10>;
+			ak4376,reset-gpio = <&tlmm 50 0x00>;
+			status = "okay";
+		};
+
+		tfa98xx@35 {
+			compatible = "nxp,tfa98xx";
+			reg = <0x35>;
+			tfa9890_vdd-supply = <&pm660_l13>;
+			status = "okay";
+		};
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 	};
 
 	qupv3_se5_i2c: i2c@894000 {
@@ -210,6 +232,7 @@
 		status = "disabled";
 	};
 
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	qupv3_se7_i2c: i2c@89c000 {
 		compatible = "qcom,i2c-geni";
 		reg = <0x89c000 0x4000>;
@@ -229,6 +252,7 @@
 		qcom,wrapper-core = <&qupv3_0>;
 		status = "disabled";
 	};
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	/* SPI */
 	qupv3_se0_spi: spi@880000 {
@@ -294,7 +318,11 @@
 		dmas = <&gpi_dma0 0 2 1 64 0>,
 			<&gpi_dma0 1 2 1 64 0>;
 		dma-names = "tx", "rx";
+		#ifndef CONFIG_MACH_OPLUS_SDM710
 		status = "disabled";
+		#else /* CONFIG_MACH_OPLUS_SDM710 */
+		status = "okay";
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 	};
 
 	qupv3_se3_spi: spi@88c000 {
@@ -329,9 +357,11 @@
 		clocks = <&clock_gcc GCC_QUPV3_WRAP0_S4_CLK>,
 			<&clock_gcc GCC_QUPV3_WRAP_0_M_AHB_CLK>,
 			<&clock_gcc GCC_QUPV3_WRAP_0_S_AHB_CLK>;
+		#ifndef CONFIG_MACH_OPLUS_SDM710
 		pinctrl-names = "default", "sleep";
 		pinctrl-0 = <&qupv3_se4_spi_active>;
 		pinctrl-1 = <&qupv3_se4_spi_sleep>;
+		#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		interrupts = <GIC_SPI 605 0>;
 		spi-max-frequency = <50000000>;
 		qcom,wrapper-core = <&qupv3_0>;
@@ -385,6 +415,7 @@
 		status = "disabled";
 	};
 
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	qupv3_se7_spi: spi@89c000 {
 		compatible = "qcom,spi-geni";
 		#address-cells = <1>;
@@ -406,6 +437,7 @@
 		dma-names = "tx", "rx";
 		status = "disabled";
 	};
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 
 	/* QUPv3 North Instances */
 	qupv3_1: qcom,qupv3_1_geni_se@ac0000 {

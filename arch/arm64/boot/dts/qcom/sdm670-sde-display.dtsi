@@ -124,8 +124,14 @@
 		qcom,panel-supply-entry@1 {
 			reg = <1>;
 			qcom,supply-name = "vdda-3p3";
+			#ifndef CONFIG_MACH_OPLUS_SDM710
 			qcom,supply-min-voltage = <3300000>;
 			qcom,supply-max-voltage = <3300000>;
+			#else /* CONFIG_MACH_OPLUS_SDM710 */
+			qcom,supply-min-voltage = <3008000>;
+			qcom,supply-max-voltage = <3008000>;
+			qcom,supply-post-on-sleep = <0>;
+			#endif /* CONFIG_MACH_OPLUS_SDM710 */
 			qcom,supply-enable-load = <13200>;
 			qcom,supply-disable-load = <80>;
 		};
@@ -576,7 +582,11 @@
 		ibb-supply = <&lcdb_ncp_vreg>;
 	};
 
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	dsi_r63417_truly_1080_cmd_display: qcom,dsi-display@20 {
+	#else /* CONFIG_MACH_OPLUS_SDM710 */
+	dsi_r63417_truly_1080_cmd_display: qcom,dsi-display@200 {
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 		compatible = "qcom,dsi-display";
 		label = "dsi_r63417_truly_1080_cmd_display";
 		qcom,display-type = "primary";
@@ -639,6 +649,10 @@
 };
 
 &sde_dp {
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	status = "disabled";
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
+
 	qcom,dp-usbpd-detection = <&pm660_pdphy>;
 	qcom,ext-disp = <&ext_disp>;
 
@@ -651,7 +665,11 @@
 };
 
 &mdss_mdp {
+	#ifndef CONFIG_MACH_OPLUS_SDM710
 	connectors = <&sde_rscc &sde_wb &sde_dp>;
+	#else /* CONFIG_MACH_OPLUS_SDM710 */
+	connectors = <&sde_rscc &sde_wb>;
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 };
 
 &dsi_dual_xrsmrtvwr_jdi_video {
