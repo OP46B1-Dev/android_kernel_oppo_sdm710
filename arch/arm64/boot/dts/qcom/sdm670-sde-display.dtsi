@@ -31,6 +31,9 @@
 #include "dsi-panel-hx8399-truly-singlemipi-fhd-video.dtsi"
 #include "dsi-panel-hx83112a-truly-singlemipi-fhd-video.dtsi"
 #include "dsi-panel-xrsmrtvwr-jdi-dual-video.dtsi"
+#ifdef CONFIG_MACH_OPLUS_OP46B1
+#include "dsi-panel-ams641rw01-samsung-1080p-cmd.dtsi"
+#endif /* CONFIG_MACH_OPLUS_OP46B1 */
 #include <dt-bindings/clock/mdss-10nm-pll-clk.h>
 
 &soc {
@@ -581,6 +584,31 @@
 		lab-supply = <&lcdb_ldo_vreg>;
 		ibb-supply = <&lcdb_ncp_vreg>;
 	};
+
+	#ifdef CONFIG_MACH_OPLUS_OP46B1
+	dsi_oppo18081samsung_ams641rw01_1080_2340_cmd_display: qcom,dsi-display@20 {
+		compatible = "qcom,dsi-display";
+		label = "dsi_oppo18081samsung_ams641rw01_1080_2340_cmd_display";
+		qcom,display-type = "primary";
+
+		qcom,dsi-ctrl = <&mdss_dsi0>;
+		qcom,dsi-phy = <&mdss_dsi_phy0>;
+		clocks = <&mdss_dsi0_pll BYTECLK_MUX_0_CLK>,
+				<&mdss_dsi0_pll PCLK_MUX_0_CLK>;
+		clock-names = "mux_byte_clk", "mux_pixel_clk";
+
+		pinctrl-names = "panel_active", "panel_suspend";
+		pinctrl-0 = <&sde_dsi_active &sde_te_active>;
+		pinctrl-1 = <&sde_dsi_suspend &sde_te_suspend>;
+		qcom,platform-te-gpio = <&tlmm 10 0>;
+		qcom,platform-reset-gpio = <&tlmm 26 0>;
+		qcom,dsi-display-active;
+
+		qcom,dsi-panel = <&dsi_oppo18081samsung_ams641rw01_1080_2340_cmd>;
+		vddio-supply = <&pm660_l8>;
+		vdda-3p3-supply = <&pm660l_l6>;
+	};
+	#endif /* CONFIG_MACH_OPLUS_OP46B1 */
 
 	#ifndef CONFIG_MACH_OPLUS_SDM710
 	dsi_r63417_truly_1080_cmd_display: qcom,dsi-display@20 {
