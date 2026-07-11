@@ -12,3 +12,13 @@ config MACH_OPLUS_SDM710
 	select MACH_OPLUS
 	help
 	  Support for OPlus SDM710 devices
+
+menu "OPlus board selection"
+
+config MACH_OPLUS_OP46B1
+  bool "OPPO Reno board"
+  select MACH_OPLUS_SDM710
+  help
+    Support for OPPO Reno (OP46B1)
+
+endmenu
