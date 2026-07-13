@@ -1741,6 +1741,9 @@ struct subsys_device *subsys_register(struct subsys_desc *desc)
 	subsys->dev.bus = &subsys_bus_type;
 	subsys->dev.release = subsys_device_release;
 	subsys->notif_state = -1;
+	#ifdef CONFIG_MACH_OPLUS_SDM710
+	subsys->restart_level = RESET_SUBSYS_COUPLED;
+	#endif /* CONFIG_MACH_OPLUS_SDM710 */
 	subsys->desc->sysmon_pid = -1;
 	strlcpy(subsys->desc->fw_name, desc->name,
 			sizeof(subsys->desc->fw_name));
