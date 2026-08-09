@@ -249,7 +249,12 @@ static const struct apsd_result const smblib_apsd_results[] = {
 	[FLOAT] = {
 		.name	= "FLOAT",
 		.bit	= FLOAT_CHARGER_BIT,
+		#ifdef CONFIG_OPLUS_CHARGER
+		/* sdm670R.c:491: treat FLOAT as DCP so oplus fast-charge path runs. */
+		.pst	= POWER_SUPPLY_TYPE_USB_DCP
+		#else /* CONFIG_OPLUS_CHARGER */
 		.pst	= POWER_SUPPLY_TYPE_USB_FLOAT
+		#endif /* CONFIG_OPLUS_CHARGER */
 	},
 	[HVDCP2] = {
 		.name	= "HVDCP2",
@@ -293,9 +298,22 @@ static const struct apsd_result *smblib_get_apsd_result(struct smb_charger *chg)
 	}
 
 	if (apsd_stat & QC_CHARGER_BIT) {
+		#ifndef CONFIG_OPLUS_CHARGER
 		/* since its a qc_charger, either return HVDCP3 or HVDCP2 */
 		if (result != &smblib_apsd_results[HVDCP3])
 			result = &smblib_apsd_results[HVDCP2];
+		#else /* CONFIG_OPLUS_CHARGER */
+		/* since its a qc_charger, either return HVDCP3 or HVDCP2.
+		 * sdm670R.c:540: oplus only remaps when the exact QC2.0 bit
+		 * pattern is seen; hook suppresses the remap otherwise. */
+		int __suppress_hvdcp2 = 0;
+
+		oplus_hook_eval(__suppress_hvdcp2, chg,
+				apsd_suppress_hvdcp2_remap, result->bit);
+		if (!__suppress_hvdcp2 &&
+				result != &smblib_apsd_results[HVDCP3])
+			result = &smblib_apsd_results[HVDCP2];
+		#endif /* CONFIG_OPLUS_CHARGER */
 	}
 
 	return result;
@@ -402,6 +420,13 @@ int smblib_set_usb_suspend(struct smb_charger *chg, bool suspend)
 		}
 	}
 
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* sdm670R.c:655: usb_status global forces suspend regardless of caller. */
+	oplus_hook_eval(rc, chg, set_usb_suspend_force, suspend);
+	if (rc)
+		suspend = true;
+	#endif /* CONFIG_OPLUS_CHARGER */
+
 	rc = smblib_masked_write(chg, USBIN_CMD_IL_REG, USBIN_SUSPEND_BIT,
 				 suspend ? USBIN_SUSPEND_BIT : 0);
 	if (rc < 0)
@@ -436,6 +461,15 @@ static int smblib_set_adapter_allowance(struct smb_charger *chg,
 {
 	int rc = 0;
 
+	#ifdef CONFIG_OPLUS_CHARGER
+	u8 val;
+
+	/* sdm670R.c:693: oplus only supports 5V on this path. */
+	rc = smblib_read(chg, USBIN_ADAPTER_ALLOW_CFG_REG, &val);
+	smblib_err(chg, "USBIN_ADAPTER_ALLOW_CFG_REG before=0x%02x, only support 5V\n",
+			val);
+	allowed_voltage = USBIN_ADAPTER_ALLOW_5V;
+	#else /* CONFIG_OPLUS_CHARGER */
 	/* PM660 only support max. 9V */
 	if (chg->smb_version == PM660_SUBTYPE) {
 		switch (allowed_voltage) {
@@ -452,6 +486,7 @@ static int smblib_set_adapter_allowance(struct smb_charger *chg,
 			break;
 		}
 	}
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	rc = smblib_write(chg, USBIN_ADAPTER_ALLOW_CFG_REG, allowed_voltage);
 	if (rc < 0) {
@@ -606,7 +641,11 @@ static void smblib_rerun_apsd(struct smb_charger *chg)
 		smblib_err(chg, "Couldn't re-run APSD rc=%d\n", rc);
 }
 
+#ifndef CONFIG_OPLUS_CHARGER
 static const struct apsd_result *smblib_update_usb_type(struct smb_charger *chg)
+#else /* CONFIG_OPLUS_CHARGER */
+const struct apsd_result *smblib_update_usb_type(struct smb_charger *chg)
+#endif /* CONFIG_OPLUS_CHARGER */
 {
 	const struct apsd_result *apsd_result = smblib_get_apsd_result(chg);
 
@@ -618,15 +657,28 @@ static const struct apsd_result *smblib_update_usb_type(struct smb_charger *chg)
 		 * Update real charger type only if its not FLOAT
 		 * detected as as SDP
 		 */
+		#ifndef CONFIG_OPLUS_CHARGER
 		if (!(apsd_result->pst == POWER_SUPPLY_TYPE_USB_FLOAT &&
 			chg->real_charger_type == POWER_SUPPLY_TYPE_USB))
 		chg->real_charger_type = apsd_result->pst;
+		#else /* CONFIG_OPLUS_CHARGER */
+		if (!(apsd_result->pst == POWER_SUPPLY_TYPE_USB_FLOAT &&
+			chg->real_charger_type == POWER_SUPPLY_TYPE_USB)) {
+			chg->real_charger_type = apsd_result->pst;
+			/* sdm670R.c:841: oplus also mirrors the type into the
+			 * usb power supply descriptor. */
+			oplus_hook_call(chg, update_usb_type, apsd_result->pst);
+		}
+		#endif /* CONFIG_OPLUS_CHARGER */
 	}
 
 	smblib_dbg(chg, PR_MISC, "APSD=%s PD=%d\n",
 					apsd_result->name, chg->pd_active);
 	return apsd_result;
 }
+#ifdef CONFIG_OPLUS_CHARGER
+EXPORT_SYMBOL_GPL(smblib_update_usb_type);
+#endif /* CONFIG_OPLUS_CHARGER */
 
 static int smblib_notifier_call(struct notifier_block *nb,
 		unsigned long ev, void *v)
@@ -803,6 +855,14 @@ int smblib_rerun_apsd_if_required(struct smb_charger *chg)
 	if (!val.intval)
 		return 0;
 
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* sdm670R.c:1038: skip rerun if the detected type is neither USB nor CDP
+	 * nor UNKNOWN. */
+	oplus_hook_eval(rc, chg, rerun_apsd_suppress);
+	if (rc)
+		return 0;
+	#endif /* CONFIG_OPLUS_CHARGER */
+
 	rc = smblib_request_dpdm(chg, true);
 	if (rc < 0)
 		smblib_err(chg, "Couldn't to enable DPDM rc=%d\n", rc);
@@ -900,6 +960,11 @@ static int set_sdp_current(struct smb_charger *chg, int icl_ua)
 		return -EINVAL;
 	}
 
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* sdm670R.c:1143: oplus collapses the options to a simple <=150mA test. */
+	oplus_hook_call(chg, sdp_current_options, icl_ua, &icl_options);
+	#endif /* CONFIG_OPLUS_CHARGER */
+
 	if (chg->real_charger_type == POWER_SUPPLY_TYPE_USB &&
 		apsd_result->pst == POWER_SUPPLY_TYPE_USB_FLOAT) {
 		/*
@@ -968,7 +1033,14 @@ int smblib_set_icl_current(struct smb_charger *chg, int icl_ua)
 			goto enable_icl_changed_interrupt;
 		}
 	} else {
+		#ifndef CONFIG_OPLUS_CHARGER
 		set_sdp_current(chg, 100000);
+		#else /* CONFIG_OPLUS_CHARGER */
+		int __sdp_ua = 100000;
+		/* sdm670R.c:1218: oplus uses 500000 here instead of 100000. */
+		oplus_hook_call(chg, icl_hc_sdp_current, &__sdp_ua);
+		set_sdp_current(chg, __sdp_ua);
+		#endif /* CONFIG_OPLUS_CHARGER */
 		rc = smblib_set_charge_param(chg, &chg->param.usb_icl, icl_ua);
 		if (rc < 0) {
 			smblib_err(chg, "Couldn't set HC ICL rc=%d\n", rc);
@@ -1142,6 +1214,9 @@ static int __smblib_set_prop_typec_power_role(struct smb_charger *chg,
 {
 	int rc = 0;
 	u8 power_role;
+#ifdef CONFIG_OPLUS_CHARGER
+	int force_sink = 0;
+#endif
 
 	switch (val->intval) {
 	case POWER_SUPPLY_TYPEC_PR_NONE:
@@ -1164,6 +1239,11 @@ static int __smblib_set_prop_typec_power_role(struct smb_charger *chg,
 	if (power_role != TYPEC_DISABLE_CMD_BIT) {
 		if (chg->ufp_only_mode)
 			power_role = UFP_EN_CMD_BIT;
+#ifdef CONFIG_OPLUS_CHARGER
+		oplus_hook_eval(force_sink, chg, force_typec_sink);
+		if (force_sink)
+			power_role = UFP_EN_CMD_BIT;
+#endif
 	}
 
 	if (chg->wa_flags & TYPEC_PBS_WA_BIT) {
@@ -1295,6 +1375,15 @@ static int smblib_hvdcp_enable_vote_callback(struct votable *votable,
 	int rc;
 	u8 val = HVDCP_AUTH_ALG_EN_CFG_BIT | HVDCP_EN_BIT;
 	u8 stat;
+	#ifdef CONFIG_OPLUS_CHARGER
+	int __oplus_h = 0;
+
+	/* sdm670R.c:1544,1556: oplus forces HVDCP off and zeroes val so neither
+	 * the auth alg nor HVDCP detection bit is set. */
+	oplus_hook_eval(__oplus_h, chg, hvdcp_enable_fixup, hvdcp_enable, &val);
+	if (__oplus_h)
+		hvdcp_enable = 0;
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	/* vote to enable/disable HW autonomous INOV */
 	vote(chg->hvdcp_hw_inov_dis_votable, client, !hvdcp_enable, 0);
@@ -1304,8 +1393,13 @@ static int smblib_hvdcp_enable_vote_callback(struct votable *votable,
 	 * This ensures only qc 2.0 detection runs but no vbus
 	 * negotiation happens.
 	 */
+	#ifndef CONFIG_OPLUS_CHARGER
 	if (!hvdcp_enable)
 		val = HVDCP_EN_BIT;
+	#else /* CONFIG_OPLUS_CHARGER */
+	if (!__oplus_h && !hvdcp_enable)
+		val = HVDCP_EN_BIT;
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	rc = smblib_masked_write(chg, USBIN_OPTIONS_1_CFG_REG,
 				 HVDCP_EN_BIT | HVDCP_AUTH_ALG_EN_CFG_BIT,
@@ -2060,8 +2154,21 @@ int smblib_get_prop_from_bms(struct smb_charger *chg,
 {
 	int rc;
 
+	#ifndef CONFIG_OPLUS_CHARGER
 	if (!chg->bms_psy)
 		return -EINVAL;
+	#else /* CONFIG_OPLUS_CHARGER */
+	if (!chg->bms_psy) {
+		int __oplus_h = 0;
+
+		/* sdm670R.c:2377: oplus reports a 50% placeholder instead of
+		 * -EINVAL when the bms psy is not ready yet. */
+		oplus_hook_eval(__oplus_h, chg, bms_missing_default, val);
+		if (__oplus_h)
+			return 0;
+		return -EINVAL;
+	}
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	rc = power_supply_get_property(chg->bms_psy, psp, val);
 
@@ -2435,6 +2542,16 @@ int smblib_get_prop_usb_online(struct smb_charger *chg,
 	int rc = 0;
 	u8 stat;
 
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* sdm670R.c:2783: oplus derives online from the USBIN rt-status when
+	 * its usb_online_status flag is set. */
+	oplus_hook_eval(rc, chg, usb_online_status, val);
+	if (rc < 0)
+		return rc;
+	if (rc > 0)
+		return 0;
+	#endif /* CONFIG_OPLUS_CHARGER */
+
 	if (get_client_vote_locked(chg->usb_icl_votable, USER_VOTER) == 0) {
 		val->intval = false;
 		return rc;
@@ -2621,13 +2738,20 @@ static int smblib_get_prop_dfp_mode(struct smb_charger *chg)
 	return POWER_SUPPLY_TYPEC_NONE;
 }
 
+#ifndef CONFIG_OPLUS_CHARGER
 static int smblib_get_prop_typec_mode(struct smb_charger *chg)
+#else /* CONFIG_OPLUS_CHARGER */
+int smblib_get_prop_typec_mode(struct smb_charger *chg)
+#endif /* CONFIG_OPLUS_CHARGER */
 {
 	if (chg->typec_status[3] & UFP_DFP_MODE_STATUS_BIT)
 		return smblib_get_prop_dfp_mode(chg);
 	else
 		return smblib_get_prop_ufp_mode(chg);
 }
+#ifdef CONFIG_OPLUS_CHARGER
+EXPORT_SYMBOL_GPL(smblib_get_prop_typec_mode);
+#endif /* CONFIG_OPLUS_CHARGER */
 
 int smblib_get_prop_typec_power_role(struct smb_charger *chg,
 				     union power_supply_propval *val)
@@ -2758,7 +2882,12 @@ int smblib_get_prop_die_health(struct smb_charger *chg,
 
 #define SDP_CURRENT_UA			500000
 #define CDP_CURRENT_UA			1500000
+#ifdef CONFIG_OPLUS_CHARGER
+/* sdm670R.c:3122: oplus advertises a 2A DCP current. */
+#define DCP_CURRENT_UA			2000000
+#else
 #define DCP_CURRENT_UA			1500000
+#endif
 #define HVDCP_CURRENT_UA		3000000
 #define TYPEC_DEFAULT_CURRENT_UA	900000
 #define TYPEC_MEDIUM_CURRENT_UA		1500000
@@ -3571,6 +3700,12 @@ void smblib_usb_plugin_hard_reset_locked(struct smb_charger *chg)
 
 		smblib_cc2_sink_removal_exit(chg);
 	} else {
+		#ifdef CONFIG_OPLUS_CHARGER
+		/* OPLUS removal state must be reset before the qcom removal path. */
+		oplus_hook_call(chg, usb_plugin_hard_reset, vbus_rising,
+				OPLUS_USB_PLUGIN_FALLING);
+		#endif /* CONFIG_OPLUS_CHARGER */
+
 		/* Force 1500mA FCC on USB removal if fcc stepper is enabled */
 		if (chg->fcc_stepper_enable)
 			vote(chg->fcc_votable, FCC_STEPPER_VOTER,
@@ -3590,6 +3725,10 @@ void smblib_usb_plugin_hard_reset_locked(struct smb_charger *chg)
 			}
 		}
 	}
+	#ifdef CONFIG_OPLUS_CHARGER
+	oplus_hook_call(chg, usb_plugin_hard_reset, vbus_rising,
+			OPLUS_USB_PLUGIN_POST);
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	power_supply_changed(chg->usb_psy);
 	smblib_dbg(chg, PR_INTERRUPT, "IRQ: usbin-plugin %s\n",
@@ -3597,6 +3736,46 @@ void smblib_usb_plugin_hard_reset_locked(struct smb_charger *chg)
 }
 
 #define PL_DELAY_MS			30000
+#ifdef CONFIG_OPLUS_CHARGER
+#define ARB_VBUS_UV_THRESHOLD		4300000
+#define ARB_IBUS_UA_THRESHOLD		100000
+#define ARB_DELAY_MS			10000
+
+static void smblib_arb_monitor_work(struct work_struct *work)
+{
+	struct smb_charger *chg = container_of(work, struct smb_charger,
+						arb_monitor_work.work);
+	union power_supply_propval pval = { 0 };
+	int ibus_current;
+	int vbus_voltage;
+	int rc;
+
+	rc = power_supply_get_property(chg->usb_psy,
+				       POWER_SUPPLY_PROP_INPUT_CURRENT_NOW, &pval);
+	if (rc < 0)
+		return;
+	ibus_current = pval.intval;
+
+	rc = power_supply_get_property(chg->usb_psy,
+				       POWER_SUPPLY_PROP_VOLTAGE_NOW, &pval);
+	if (rc < 0)
+		return;
+	vbus_voltage = pval.intval;
+
+	if (vbus_voltage < ARB_VBUS_UV_THRESHOLD &&
+	    ibus_current < ARB_IBUS_UA_THRESHOLD) {
+		rc = vote(chg->usb_icl_votable, USER_VOTER, true, 0);
+		if (rc < 0)
+			return;
+		mdelay(100);
+		vote(chg->usb_icl_votable, USER_VOTER, false, 0);
+	}
+
+	schedule_delayed_work(&chg->arb_monitor_work,
+			      msecs_to_jiffies(ARB_DELAY_MS));
+}
+#endif
+
 void smblib_usb_plugin_locked(struct smb_charger *chg)
 {
 	int rc;
@@ -3612,6 +3791,10 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 	}
 
 	vbus_rising = (bool)(stat & USBIN_PLUGIN_RT_STS_BIT);
+#ifdef CONFIG_OPLUS_CHARGER
+	oplus_hook_call(chg, usb_plugin_locked, vbus_rising,
+			OPLUS_USB_PLUGIN_PRE);
+#endif /* CONFIG_OPLUS_CHARGER */
 	smblib_set_opt_freq_buck(chg, vbus_rising ? chg->chg_freq.freq_5V :
 						chg->chg_freq.freq_removal);
 
@@ -3620,6 +3803,10 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 			chg->fake_usb_insertion = true;
 			return;
 		}
+#ifdef CONFIG_OPLUS_CHARGER
+		oplus_hook_call(chg, usb_plugin_locked, vbus_rising,
+				OPLUS_USB_PLUGIN_RISING);
+#endif /* CONFIG_OPLUS_CHARGER */
 
 		rc = smblib_request_dpdm(chg, true);
 		if (rc < 0)
@@ -3633,6 +3820,11 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 		vote(chg->awake_votable, PL_DELAY_VOTER, true, 0);
 		schedule_delayed_work(&chg->pl_enable_work,
 					msecs_to_jiffies(PL_DELAY_MS));
+#ifdef CONFIG_OPLUS_CHARGER
+		if (chg->arb_monitor_enable)
+			schedule_delayed_work(&chg->arb_monitor_work,
+					      msecs_to_jiffies(ARB_DELAY_MS));
+#endif
 		/* vbus rising when APSD was disabled and PD_ACTIVE = 0 */
 		if (get_effective_result(chg->apsd_disable_votable) &&
 				!chg->pd_active)
@@ -3642,6 +3834,10 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 			chg->fake_usb_insertion = false;
 			return;
 		}
+#ifdef CONFIG_OPLUS_CHARGER
+		oplus_hook_call(chg, usb_plugin_locked, vbus_rising,
+				OPLUS_USB_PLUGIN_FALLING);
+#endif /* CONFIG_OPLUS_CHARGER */
 
 		if (chg->wa_flags & BOOST_BACK_WA) {
 			data = chg->irq_info[SWITCH_POWER_OK_IRQ].irq_data;
@@ -3662,12 +3858,20 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 							true, 1500000);
 
 		rc = smblib_request_dpdm(chg, false);
+#ifdef CONFIG_OPLUS_CHARGER
+		if (chg->arb_monitor_enable)
+			cancel_delayed_work_sync(&chg->arb_monitor_work);
+#endif
 		if (rc < 0)
 			smblib_err(chg, "Couldn't disable DPDM rc=%d\n", rc);
 	}
 
 	if (chg->connector_type == POWER_SUPPLY_CONNECTOR_MICRO_USB)
 		smblib_micro_usb_plugin(chg, vbus_rising);
+#ifdef CONFIG_OPLUS_CHARGER
+	oplus_hook_call(chg, usb_plugin_locked, vbus_rising,
+			OPLUS_USB_PLUGIN_POST);
+#endif /* CONFIG_OPLUS_CHARGER */
 
 	power_supply_changed(chg->usb_psy);
 	smblib_dbg(chg, PR_INTERRUPT, "IRQ: usbin-plugin %s\n",
@@ -3999,6 +4203,11 @@ static void smblib_handle_apsd_done(struct smb_charger *chg, bool rising)
 
 	apsd_result = smblib_update_usb_type(chg);
 
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* sdm670R.c:4548: vote 500mA when oplus hasn't taken over input current. */
+	oplus_hook_call(chg, apsd_done);
+	#endif /* CONFIG_OPLUS_CHARGER */
+
 	if (!chg->typec_legacy_valid)
 		smblib_force_legacy_icl(chg, apsd_result->pst);
 
@@ -4037,6 +4246,13 @@ irqreturn_t smblib_handle_usb_source_change(int irq, void *data)
 	struct smb_charger *chg = irq_data->parent_data;
 	int rc = 0;
 	u8 stat;
+#ifdef CONFIG_OPLUS_CHARGER
+	int skip_source_change;
+
+	oplus_hook_eval(skip_source_change, chg, usb_source_change_guard);
+	if (skip_source_change)
+		return IRQ_HANDLED;
+#endif
 
 	if (chg->fake_usb_insertion)
 		return IRQ_HANDLED;
@@ -4048,20 +4264,53 @@ irqreturn_t smblib_handle_usb_source_change(int irq, void *data)
 	}
 	smblib_dbg(chg, PR_REGISTER, "APSD_STATUS = 0x%02x\n", stat);
 
+	#ifndef CONFIG_OPLUS_CHARGER
 	if ((chg->connector_type == POWER_SUPPLY_CONNECTOR_MICRO_USB)
 			&& (stat & APSD_DTC_STATUS_DONE_BIT)
 			&& !chg->uusb_apsd_rerun_done) {
+	#else /* CONFIG_OPLUS_CHARGER */
+	if ((stat & APSD_DTC_STATUS_DONE_BIT) &&
+	    !chg->uusb_apsd_rerun_done) {
+	#endif /* CONFIG_OPLUS_CHARGER */
 		/*
 		 * Force re-run APSD to handle slow insertion related
 		 * charger-mis-detection.
 		 */
+		#ifndef CONFIG_OPLUS_CHARGER
 		chg->uusb_apsd_rerun_done = true;
 		smblib_rerun_apsd(chg);
 		return IRQ_HANDLED;
+		#else /* CONFIG_OPLUS_CHARGER */
+		if (chg->oplus_hook &&
+		    chg->oplus_hook->usb_source_change_rerun) {
+			rc = chg->oplus_hook->usb_source_change_rerun(chg);
+			if (rc < 0)
+				smblib_err(chg,
+					"Couldn't inspect APSD result rc=%d\n", rc);
+			else if (rc > 0) {
+				chg->uusb_apsd_rerun_done = true;
+				smblib_rerun_apsd(chg);
+				return IRQ_HANDLED;
+			}
+		} else {
+			if (chg->connector_type == POWER_SUPPLY_CONNECTOR_MICRO_USB) {
+				chg->uusb_apsd_rerun_done = true;
+				smblib_rerun_apsd(chg);
+				return IRQ_HANDLED;
+			}
+		}
+		#endif
 	}
 
+	#ifndef CONFIG_OPLUS_CHARGER
 	smblib_handle_apsd_done(chg,
 		(bool)(stat & APSD_DTC_STATUS_DONE_BIT));
+	#else /* CONFIG_OPLUS_CHARGER */
+		smblib_handle_apsd_done(chg,
+		(bool)(stat & APSD_DTC_STATUS_DONE_BIT));
+	oplus_hook_call(chg, usb_source_change,
+			(bool)(stat & APSD_DTC_STATUS_DONE_BIT));
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	smblib_handle_hvdcp_detect_done(chg,
 		(bool)(stat & QC_CHARGER_BIT));
@@ -4473,6 +4722,10 @@ static void smblib_handle_typec_insertion(struct smb_charger *chg)
 	if (chg->typec_status[3] & UFP_DFP_MODE_STATUS_BIT) {
 		typec_sink_insertion(chg);
 	} else {
+		#ifdef CONFIG_OPLUS_CHARGER
+		/* sdm670R.c:5058: oplus re-enables AICL on source insertion. */
+		oplus_hook_call(chg, typec_insertion);
+		#endif /* CONFIG_OPLUS_CHARGER */
 		rc = smblib_request_dpdm(chg, true);
 		if (rc < 0)
 			smblib_err(chg, "Couldn't to enable DPDM rc=%d\n", rc);
@@ -4616,7 +4869,16 @@ irqreturn_t smblib_handle_dc_plugin(int irq, void *data)
 	struct smb_irq_data *irq_data = data;
 	struct smb_charger *chg = irq_data->parent_data;
 
+	#ifndef CONFIG_OPLUS_CHARGER
 	power_supply_changed(chg->dc_psy);
+	#else /* CONFIG_OPLUS_CHARGER */
+	int __oplus_h = 0;
+
+	/* sdm670R.c:5266: oplus may not register a dc psy, so guard the notify. */
+	oplus_hook_eval(__oplus_h, chg, dc_plugin_guard);
+	if (!__oplus_h)
+		power_supply_changed(chg->dc_psy);
+	#endif /* CONFIG_OPLUS_CHARGER */
 	return IRQ_HANDLED;
 }
 
@@ -4655,7 +4917,11 @@ irqreturn_t smblib_handle_switcher_power_ok(int irq, void *data)
 {
 	struct smb_irq_data *irq_data = data;
 	struct smb_charger *chg = irq_data->parent_data;
+	#ifndef CONFIG_OPLUS_CHARGER
 	struct storm_watch *wdata = &irq_data->storm_data;
+	#else /* CONFIG_OPLUS_CHARGER */
+	struct storm_watch *wdata __maybe_unused = &irq_data->storm_data;
+	#endif /* CONFIG_OPLUS_CHARGER */
 	int rc, usb_icl;
 	u8 stat;
 
@@ -4677,6 +4943,7 @@ irqreturn_t smblib_handle_switcher_power_ok(int irq, void *data)
 		return IRQ_HANDLED;
 
 	if (is_storming(&irq_data->storm_data)) {
+		#ifndef CONFIG_OPLUS_CHARGER
 		/* This could be a weak charger reduce ICL */
 		if (!is_client_vote_enabled(chg->usb_icl_votable,
 						WEAK_CHARGER_VOTER)) {
@@ -4703,6 +4970,41 @@ irqreturn_t smblib_handle_switcher_power_ok(int irq, void *data)
 			schedule_delayed_work(&chg->bb_removal_work,
 				msecs_to_jiffies(BOOST_BACK_UNVOTE_DELAY_MS));
 		}
+		#else /* CONFIG_OPLUS_CHARGER */
+		int __oplus_h = 0;
+
+		/* sdm670R.c:5333: oplus replaces the weak-charger/boost-back
+		 * block with a simpler conditional 0mA vote. */
+		oplus_hook_eval(__oplus_h, chg, switcher_power_ok_storm, irq_data);
+		if (!__oplus_h) {
+			/* This could be a weak charger reduce ICL */
+			if (!is_client_vote_enabled(chg->usb_icl_votable,
+							WEAK_CHARGER_VOTER)) {
+				smblib_err(chg,
+					"Weak charger detected: voting %dmA ICL\n",
+					*chg->weak_chg_icl_ua / 1000);
+				vote(chg->usb_icl_votable, WEAK_CHARGER_VOTER,
+						true, *chg->weak_chg_icl_ua);
+				/*
+				 * reset storm data and set the storm threshold
+				 * to 3 for reverse boost detection.
+				 */
+				update_storm_count(wdata, BOOST_BACK_STORM_COUNT);
+			} else {
+				smblib_err(chg,
+					"Reverse boost detected: voting 0mA to suspend input\n");
+				vote(chg->usb_icl_votable, BOOST_BACK_VOTER, true, 0);
+				vote(chg->awake_votable, BOOST_BACK_VOTER, true, 0);
+				/*
+				 * Remove the boost-back vote after a delay, to avoid
+				 * permanently suspending the input if the boost-back
+				 * condition is unintentionally hit.
+				 */
+				schedule_delayed_work(&chg->bb_removal_work,
+					msecs_to_jiffies(BOOST_BACK_UNVOTE_DELAY_MS));
+			}
+		}
+		#endif /* CONFIG_OPLUS_CHARGER */
 	}
 
 	return IRQ_HANDLED;
@@ -5433,6 +5735,14 @@ int smblib_init(struct smb_charger *chg)
 		return -EINVAL;
 	}
 
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* OPLUS_HOOK: initialize charger monitor, Type-C recovery and divider work. */
+	oplus_hook_call(chg, post_smblib_init);
+	if (chg->arb_monitor_enable)
+		INIT_DELAYED_WORK(&chg->arb_monitor_work,
+				  smblib_arb_monitor_work);
+	#endif
+
 	return rc;
 }
 
@@ -5449,6 +5759,10 @@ int smblib_deinit(struct smb_charger *chg)
 		cancel_work_sync(&chg->vconn_oc_work);
 		cancel_delayed_work_sync(&chg->otg_ss_done_work);
 		cancel_delayed_work_sync(&chg->icl_change_work);
+		#ifdef CONFIG_OPLUS_CHARGER
+		if (chg->arb_monitor_enable)
+			cancel_delayed_work_sync(&chg->arb_monitor_work);
+		#endif
 		cancel_delayed_work_sync(&chg->pl_enable_work);
 		cancel_work_sync(&chg->legacy_detection_work);
 		cancel_delayed_work_sync(&chg->uusb_otg_work);

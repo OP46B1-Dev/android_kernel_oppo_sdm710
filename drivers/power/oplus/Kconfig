@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# OPLUS charging stack (sdm670R / OP46B1 / SDM710 + PMI632).
+
+config OPLUS_CHARGER
+	bool "OPLUS Charger Driver (sdm670R)"
+	default y
+	depends on MACH_OPLUS && I2C
+	select REGMAP_I2C
+	select QPNP_SMB2
+	help
+	  This enables the OPLUS charging stack for the sdm670R platform
+	  (OP46B1 / SDM710 + PMI632). It hooks into the qcom QPNP SMB2
+	  charger driver via function-pointer callbacks (struct oplus_smb_hook)
+	  and provides the oplus vooc / gauge / adapter / short-circuit / IC
+	  (bq27541) business logic.
+
+	  When disabled, the qcom QPNP SMB2 charger behaves exactly like the
+	  upstream original (all hooks compile away to no-ops).
+
+	  Say Y here for OP46B1 / Reno.
+
+if OPLUS_CHARGER
+
+config OPLUS_SDM670R_CHARGER
+	bool
+	default y
+	help
+	  Compatibility symbol used by the original sdm670R charging sources.
+
+config OPLUS_CHIP_SOC_NODE
+	bool "Expose the OPLUS chip SOC property"
+	default y
+
+config OPLUS_SHORT_C_BATT_CHECK
+	bool "OPLUS battery short-circuit protection"
+	default y
+
+config OPLUS_SHORT_HW_CHECK
+	bool "OPLUS hardware battery short-circuit check"
+	default y
+
+config OPLUS_SHORT_USERSPACE
+	bool "OPLUS userspace short-circuit controls"
+	default y
+
+config OPLUS_SHORT_IC_CHECK
+	bool "OPLUS external short-circuit IC check"
+	default y
+
+config OPLUS_SHIP_MODE_SUPPORT
+	bool "OPLUS ship mode support"
+	default y
+
+config OPLUS_CHECK_CHARGERID_VOLT
+	bool "OPLUS charger-ID voltage support"
+	default y
+
+config OPLUS_RTC_DET_SUPPORT
+	bool "OPLUS RTC reset detection"
+	default y
+
+config OPLUS_SMART_CHARGER_SUPPORT
+	bool "OPLUS smart charger controls"
+	default y
+
+endif

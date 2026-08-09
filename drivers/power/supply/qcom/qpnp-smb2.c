@@ -227,6 +227,13 @@ static int smb2_parse_dt(struct smb2 *chip)
 	chg->sw_jeita_enabled = of_property_read_bool(node,
 				"qcom,sw-jeita-enable");
 
+#ifdef CONFIG_OPLUS_CHARGER
+	rc = of_property_read_u32(node, "qcom,charger_id_num",
+				  &chg->charger_id_num);
+	if (rc < 0)
+		chg->charger_id_num = 0;
+#endif
+
 	rc = of_property_read_u32(node, "qcom,wd-bark-time-secs",
 					&chip->dt.wd_bark_time);
 	if (rc < 0 || chip->dt.wd_bark_time < MIN_WD_BARK_TIME)
@@ -328,7 +335,12 @@ static int smb2_parse_dt(struct smb2 *chip)
 	chg->use_extcon = of_property_read_bool(node,
 						"qcom,use-extcon");
 
+#ifndef CONFIG_OPLUS_CHARGER
 	chg->dcp_icl_ua = chip->dt.usb_icl_ua;
+#else
+	/* OPLUS owns DCP/AICL current selection, including VOOC hand-off. */
+	chg->dcp_icl_ua = -EINVAL;
+#endif
 
 	chg->suspend_input_on_debug_batt = of_property_read_bool(node,
 					"qcom,suspend-input-on-debug-batt");
@@ -343,6 +355,11 @@ static int smb2_parse_dt(struct smb2 *chip)
 
 	chg->fcc_stepper_enable = of_property_read_bool(node,
 					"qcom,fcc-stepping-enable");
+
+#ifdef CONFIG_OPLUS_CHARGER
+	chg->arb_monitor_enable = of_property_read_bool(node,
+					"qcom,arb_monitor_enable");
+#endif
 
 	chg->ufp_only_mode = of_property_read_bool(node,
 					"qcom,ufp-only-mode");
@@ -381,6 +398,12 @@ static enum power_supply_property smb2_usb_props[] = {
 	POWER_SUPPLY_PROP_SDP_CURRENT_MAX,
 	POWER_SUPPLY_PROP_CONNECTOR_TYPE,
 	POWER_SUPPLY_PROP_MOISTURE_DETECTED,
+#ifdef CONFIG_OPLUS_CHARGER
+	POWER_SUPPLY_PROP_FAST_CHG_TYPE,
+	POWER_SUPPLY_PROP_USB_STATUS,
+	POWER_SUPPLY_PROP_USBTEMP_VOLT_L,
+	POWER_SUPPLY_PROP_USBTEMP_VOLT_R,
+#endif
 };
 
 static int smb2_usb_get_prop(struct power_supply *psy,
@@ -390,6 +413,9 @@ static int smb2_usb_get_prop(struct power_supply *psy,
 	struct smb2 *chip = power_supply_get_drvdata(psy);
 	struct smb_charger *chg = &chip->chg;
 	int rc = 0;
+#ifdef CONFIG_OPLUS_CHARGER
+	int use_present = 0;
+#endif /* CONFIG_OPLUS_CHARGER */
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_PRESENT:
@@ -399,7 +425,15 @@ static int smb2_usb_get_prop(struct power_supply *psy,
 			rc = smblib_get_prop_usb_present(chg, val);
 		break;
 	case POWER_SUPPLY_PROP_ONLINE:
+		#ifndef CONFIG_OPLUS_CHARGER
 		rc = smblib_get_prop_usb_online(chg, val);
+		#else /* CONFIG_OPLUS_CHARGER */
+		oplus_hook_eval(use_present, chg, usb_use_present_status);
+		if (use_present)
+			rc = smblib_get_prop_usb_present(chg, val);
+		else
+			rc = smblib_get_prop_usb_online(chg, val);
+		#endif /* CONFIG_OPLUS_CHARGER */
 		if (!val->intval)
 			break;
 
@@ -425,6 +459,17 @@ static int smb2_usb_get_prop(struct power_supply *psy,
 		val->intval = get_client_vote(chg->usb_icl_votable, PD_VOTER);
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
+		#ifdef CONFIG_OPLUS_CHARGER
+		/*
+		 * VOOC bypasses the PMIC input path while it is actively
+		 * charging.  Let its read-only hook describe that adapter;
+		 * every unhandled case keeps the native QCOM settled-current
+		 * result below.
+		 */
+		if (chg->oplus_hook && chg->oplus_hook->usb_get_property &&
+		    !chg->oplus_hook->usb_get_property(chg, psp, val))
+			break;
+		#endif
 		rc = smblib_get_prop_input_current_settled(chg, val);
 		break;
 	case POWER_SUPPLY_PROP_TYPE:
@@ -506,6 +551,17 @@ static int smb2_usb_get_prop(struct power_supply *psy,
 		val->intval = get_client_vote(chg->disable_power_role_switch,
 					      MOISTURE_VOTER);
 		break;
+#ifdef CONFIG_OPLUS_CHARGER
+	case POWER_SUPPLY_PROP_FAST_CHG_TYPE:
+	case POWER_SUPPLY_PROP_USB_STATUS:
+	case POWER_SUPPLY_PROP_USBTEMP_VOLT_L:
+	case POWER_SUPPLY_PROP_USBTEMP_VOLT_R:
+		if (chg->oplus_hook && chg->oplus_hook->usb_get_property)
+			rc = chg->oplus_hook->usb_get_property(chg, psp, val);
+		else
+			rc = -ENODATA;
+		break;
+#endif
 	default:
 		pr_err("get prop %d is not supported in usb\n", psp);
 		rc = -EINVAL;
@@ -625,6 +681,22 @@ static int smb2_init_usb_psy(struct smb2 *chip)
 
 	return 0;
 }
+
+#ifdef CONFIG_OPLUS_CHARGER
+int smb2_init_usb_psy_for_oplus(struct smb_charger *chg)
+{
+	struct smb2 *chip;
+
+	if (!chg)
+		return -EINVAL;
+	if (!IS_ERR_OR_NULL(chg->usb_psy))
+		return 0;
+
+	chip = container_of(chg, struct smb2, chg);
+	return smb2_init_usb_psy(chip);
+}
+EXPORT_SYMBOL_GPL(smb2_init_usb_psy_for_oplus);
+#endif /* CONFIG_OPLUS_CHARGER */
 
 /********************************
  * USB PC_PORT PSY REGISTRATION *
@@ -1904,6 +1976,15 @@ static int smb2_init_hw(struct smb2 *chip)
 		}
 	}
 
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* OPLUS register overrides are part of hardware initialization. */
+	if (chg->oplus_hook && chg->oplus_hook->post_smb2_init_hw) {
+		rc = chg->oplus_hook->post_smb2_init_hw(chg);
+		if (rc < 0)
+			return rc;
+	}
+	#endif
+
 	return rc;
 }
 
@@ -1912,6 +1993,12 @@ static int smb2_post_init(struct smb2 *chip)
 	struct smb_charger *chg = &chip->chg;
 	int rc;
 	u8 stat;
+	bool force_ufp = chg->ufp_only_mode;
+
+#ifdef CONFIG_OPLUS_CHARGER
+	if (chg->oplus_hook && chg->oplus_hook->force_typec_sink)
+		force_ufp |= chg->oplus_hook->force_typec_sink(chg);
+#endif
 
 	/* In case the usb path is suspended, we would have missed disabling
 	 * the icl change interrupt because the interrupt could have been
@@ -1920,7 +2007,7 @@ static int smb2_post_init(struct smb2 *chip)
 	rerun_election(chg->usb_icl_votable);
 
 	/* Force charger in Sink Only mode */
-	if (chg->ufp_only_mode) {
+	if (force_ufp) {
 		rc = smblib_read(chg, TYPE_C_INTRPT_ENB_SOFTWARE_CTRL_REG,
 				&stat);
 		if (rc < 0) {
@@ -1998,8 +2085,17 @@ static int smb2_chg_config_init(struct smb2 *chip)
 		break;
 	case PM660_SUBTYPE:
 		chip->chg.smb_version = PM660_SUBTYPE;
+#ifdef CONFIG_OPLUS_CHARGER
+		/*
+		 * color-11.1 single-cell PM660 policy. OPLUS did not enable
+		 * OV/PBS workarounds that alter the role/switcher state
+		 * machine.
+		 */
+		chip->chg.wa_flags |= BOOST_BACK_WA | OTG_WA;
+#else
 		chip->chg.wa_flags |= BOOST_BACK_WA | OTG_WA | OV_IRQ_WA_BIT
 				| TYPEC_PBS_WA_BIT;
+#endif
 		chg->param.freq_buck = pm660_params.freq_buck;
 		chg->param.freq_boost = pm660_params.freq_boost;
 		chg->chg_freq.freq_5V		= 650;
@@ -2400,6 +2496,19 @@ static int smb2_probe(struct platform_device *pdev)
 	int rc = 0;
 	union power_supply_propval val;
 	int usb_present, batt_present, batt_health, batt_charge_type;
+	#ifdef CONFIG_OPLUS_CHARGER
+	int oplus_psy_rc = 0;
+	bool smblib_initialized = false;
+	struct oplus_chg_chip *oplus_chip = NULL;
+
+	/* OPLUS_HOOK: probe_early — create oplus_chip, parse svooc dt, dependency
+	 * checks, acquire vadc. Runs BEFORE qcom chip kzalloc. */
+	if (oplus_smb_hooks.probe_early) {
+		oplus_chip = oplus_smb_hooks.probe_early(pdev);
+		if (IS_ERR(oplus_chip))
+			return PTR_ERR(oplus_chip);
+	}
+	#endif
 
 	chip = devm_kzalloc(&pdev->dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip)
@@ -2417,9 +2526,19 @@ static int smb2_probe(struct platform_device *pdev)
 	chg->name = "PMI";
 	chg->audio_headset_drp_wait_ms = &__audio_headset_drp_wait_ms;
 
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* OPLUS_HOOK: probe_attach — link oplus_chip->pmic_spmi.chg, install the
+	 * oplus_hook table onto chg, set chg->pre_current_ma = -1. */
+	if (oplus_smb_hooks.probe_attach)
+		oplus_smb_hooks.probe_attach(oplus_chip, chg);
+	#endif
+
 	chg->regmap = dev_get_regmap(chg->dev->parent, NULL);
 	if (!chg->regmap) {
 		pr_err("parent regmap is missing\n");
+		#ifdef CONFIG_OPLUS_CHARGER
+		oplus_hook_call(chg, remove);
+		#endif /* CONFIG_OPLUS_CHARGER */
 		return -EINVAL;
 	}
 
@@ -2427,6 +2546,9 @@ static int smb2_probe(struct platform_device *pdev)
 	if (rc < 0) {
 		if (rc != -EPROBE_DEFER)
 			pr_err("Couldn't setup chg_config rc=%d\n", rc);
+		#ifdef CONFIG_OPLUS_CHARGER
+		oplus_hook_call(chg, remove);
+		#endif /* CONFIG_OPLUS_CHARGER */
 		return rc;
 	}
 
@@ -2441,6 +2563,9 @@ static int smb2_probe(struct platform_device *pdev)
 		pr_err("Smblib_init failed rc=%d\n", rc);
 		goto cleanup;
 	}
+	#ifdef CONFIG_OPLUS_CHARGER
+	smblib_initialized = true;
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	/* set driver data before resources request it */
 	platform_set_drvdata(pdev, chip);
@@ -2481,6 +2606,7 @@ static int smb2_probe(struct platform_device *pdev)
 		goto cleanup;
 	}
 
+	#ifndef CONFIG_OPLUS_CHARGER
 	rc = smb2_init_dc_psy(chip);
 	if (rc < 0) {
 		pr_err("Couldn't initialize dc psy rc=%d\n", rc);
@@ -2492,6 +2618,33 @@ static int smb2_probe(struct platform_device *pdev)
 		pr_err("Couldn't initialize usb psy rc=%d\n", rc);
 		goto cleanup;
 	}
+	#else /* CONFIG_OPLUS_CHARGER */
+	/* OPLUS_HOOK: probe_psy_init (stage 3/6) — oplus registers its own
+	 * ac/usb/batt psy via oplus_power_supply_init(). Non-zero return means
+	 * oplus took over; qcom skips dc/usb/batt psy registration.
+	 * usb_main and usb_port psy always register on both paths. */
+	if (chg->oplus_hook && chg->oplus_hook->probe_psy_init)
+		oplus_psy_rc = chg->oplus_hook->probe_psy_init(oplus_chip);
+	if (oplus_psy_rc < 0) {
+		rc = oplus_psy_rc;
+		pr_err("Couldn't initialize OPLUS power supplies rc=%d\n", rc);
+		goto cleanup;
+	}
+
+	if (!oplus_psy_rc) {
+		rc = smb2_init_dc_psy(chip);
+		if (rc < 0) {
+			pr_err("Couldn't initialize dc psy rc=%d\n", rc);
+			goto cleanup;
+		}
+
+		rc = smb2_init_usb_psy(chip);
+		if (rc < 0) {
+			pr_err("Couldn't initialize usb psy rc=%d\n", rc);
+			goto cleanup;
+		}
+	}
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	rc = smb2_init_usb_main_psy(chip);
 	if (rc < 0) {
@@ -2505,11 +2658,32 @@ static int smb2_probe(struct platform_device *pdev)
 		goto cleanup;
 	}
 
+	#ifndef CONFIG_OPLUS_CHARGER
 	rc = smb2_init_batt_psy(chip);
 	if (rc < 0) {
 		pr_err("Couldn't initialize batt psy rc=%d\n", rc);
 		goto cleanup;
 	}
+	#else /* CONFIG_OPLUS_CHARGER */
+	if (!oplus_psy_rc) {
+		rc = smb2_init_batt_psy(chip);
+		if (rc < 0) {
+			pr_err("Couldn't initialize batt psy rc=%d\n", rc);
+			goto cleanup;
+		}
+	}
+
+	/* OPLUS_HOOK: probe_chg_init (stage 4/6) — boot charge reset,
+	 * parse_charger_dt, oplus_chg_init, push FV/Icc to main psy. Runs AFTER
+	 * qcom psy registration and BEFORE determine_initial_status. */
+	if (oplus_smb_hooks.probe_chg_init) {
+		rc = oplus_smb_hooks.probe_chg_init(oplus_chip);
+		if (rc < 0) {
+			pr_err("oplus probe_chg_init failed rc=%d\n", rc);
+			goto cleanup;
+		}
+	}
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	rc = smb2_determine_initial_status(chip);
 	if (rc < 0) {
@@ -2530,6 +2704,18 @@ static int smb2_probe(struct platform_device *pdev)
 		goto cleanup;
 	}
 
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* OPLUS_HOOK: probe_finalize (stage 5/6) — wake_update_work, tbatt
+	 * power-off task, proc_dump mask, usbtemp thread init and charger-side
+	 * typec-disable scheduling. Runs after qcom post_init. */
+	if (oplus_smb_hooks.probe_finalize)
+		rc = oplus_smb_hooks.probe_finalize(oplus_chip);
+	if (rc < 0) {
+		pr_err("OPLUS probe finalize failed rc=%d\n", rc);
+		goto cleanup;
+	}
+	#endif
+
 	smb2_create_debugfs(chip);
 
 	rc = smblib_get_prop_usb_present(chg, &val);
@@ -2546,12 +2732,28 @@ static int smb2_probe(struct platform_device *pdev)
 	}
 	batt_present = val.intval;
 
+	#ifndef CONFIG_OPLUS_CHARGER
 	rc = smblib_get_prop_batt_health(chg, &val);
 	if (rc < 0) {
 		pr_err("Couldn't get batt health rc=%d\n", rc);
 		val.intval = POWER_SUPPLY_HEALTH_UNKNOWN;
 	}
 	batt_health = val.intval;
+	#else /* CONFIG_OPLUS_CHARGER */
+	/* OPLUS_HOOK: batt_health (stage 6/6, E27) — oplus replaces qcom RRADC
+	 * batt_health read. Falls back to qcom when no hook registered. */
+	if (chg->oplus_hook && chg->oplus_hook->batt_health)
+		chg->oplus_hook->batt_health(oplus_chip, &batt_health);
+	else
+	{
+		rc = smblib_get_prop_batt_health(chg, &val);
+		if (rc < 0) {
+			pr_err("Couldn't get batt health rc=%d\n", rc);
+			val.intval = POWER_SUPPLY_HEALTH_UNKNOWN;
+		}
+		batt_health = val.intval;
+	}
+	#endif
 
 	rc = smblib_get_prop_batt_charge_type(chg, &val);
 	if (rc < 0) {
@@ -2569,6 +2771,7 @@ static int smb2_probe(struct platform_device *pdev)
 
 cleanup:
 	smb2_free_interrupts(chg);
+	#ifndef CONFIG_OPLUS_CHARGER
 	if (chg->batt_psy)
 		power_supply_unregister(chg->batt_psy);
 	if (chg->usb_main_psy)
@@ -2578,13 +2781,30 @@ cleanup:
 	if (chg->usb_port_psy)
 		power_supply_unregister(chg->usb_port_psy);
 	if (chg->dc_psy)
+	#else /* CONFIG_OPLUS_CHARGER */
+	oplus_hook_call(chg, remove);
+	if (!IS_ERR_OR_NULL(chg->batt_psy))
+		power_supply_unregister(chg->batt_psy);
+	if (!IS_ERR_OR_NULL(chg->usb_main_psy))
+		power_supply_unregister(chg->usb_main_psy);
+	if (!IS_ERR_OR_NULL(chg->usb_psy))
+		power_supply_unregister(chg->usb_psy);
+	if (!IS_ERR_OR_NULL(chg->usb_port_psy))
+		power_supply_unregister(chg->usb_port_psy);
+	if (!IS_ERR_OR_NULL(chg->dc_psy))
+	#endif /* CONFIG_OPLUS_CHARGER */
 		power_supply_unregister(chg->dc_psy);
 	if (chg->vconn_vreg && chg->vconn_vreg->rdev)
 		devm_regulator_unregister(chg->dev, chg->vconn_vreg->rdev);
 	if (chg->vbus_vreg && chg->vbus_vreg->rdev)
 		devm_regulator_unregister(chg->dev, chg->vbus_vreg->rdev);
 
+	#ifndef CONFIG_OPLUS_CHARGER
 	smblib_deinit(chg);
+	#else /* CONFIG_OPLUS_CHARGER */
+	if (smblib_initialized)
+		smblib_deinit(chg);
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	platform_set_drvdata(pdev, NULL);
 	return rc;
@@ -2593,6 +2813,7 @@ cleanup:
 static int smb2_remove(struct platform_device *pdev)
 {
 	struct smb2 *chip = platform_get_drvdata(pdev);
+	#ifndef CONFIG_OPLUS_CHARGER
 	struct smb_charger *chg = &chip->chg;
 
 	power_supply_unregister(chg->batt_psy);
@@ -2600,6 +2821,32 @@ static int smb2_remove(struct platform_device *pdev)
 	power_supply_unregister(chg->usb_port_psy);
 	regulator_unregister(chg->vconn_vreg->rdev);
 	regulator_unregister(chg->vbus_vreg->rdev);
+	#else /* CONFIG_OPLUS_CHARGER */
+	struct smb_charger *chg;
+
+	if (!chip)
+		return 0;
+	chg = &chip->chg;
+
+	smb2_free_interrupts(chg);
+	oplus_hook_call(chg, remove);
+	if (!IS_ERR_OR_NULL(chg->batt_psy))
+		power_supply_unregister(chg->batt_psy);
+	if (!IS_ERR_OR_NULL(chg->usb_main_psy))
+		power_supply_unregister(chg->usb_main_psy);
+	if (!IS_ERR_OR_NULL(chg->usb_psy))
+		power_supply_unregister(chg->usb_psy);
+	if (!IS_ERR_OR_NULL(chg->usb_port_psy))
+		power_supply_unregister(chg->usb_port_psy);
+	if (!IS_ERR_OR_NULL(chg->dc_psy))
+		power_supply_unregister(chg->dc_psy);
+	if (chg->vconn_vreg && chg->vconn_vreg->rdev)
+		devm_regulator_unregister(chg->dev, chg->vconn_vreg->rdev);
+	if (chg->vbus_vreg && chg->vbus_vreg->rdev)
+		devm_regulator_unregister(chg->dev, chg->vbus_vreg->rdev);
+	smblib_deinit(chg);
+	device_init_wakeup(chg->dev, false);
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	platform_set_drvdata(pdev, NULL);
 	return 0;
@@ -2609,6 +2856,11 @@ static void smb2_shutdown(struct platform_device *pdev)
 {
 	struct smb2 *chip = platform_get_drvdata(pdev);
 	struct smb_charger *chg = &chip->chg;
+
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* Reset VOOC before touching the qcom charger registers. */
+	oplus_hook_call(chg, shutdown, false);
+	#endif /* CONFIG_OPLUS_CHARGER */
 
 	/* disable all interrupts */
 	smb2_disable_interrupts(chg);
@@ -2626,7 +2878,46 @@ static void smb2_shutdown(struct platform_device *pdev)
 	/* force enable APSD */
 	smblib_masked_write(chg, USBIN_OPTIONS_1_CFG_REG,
 				 AUTO_SRC_DETECT_BIT, AUTO_SRC_DETECT_BIT);
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* Ship mode must be the final hardware operation. */
+	oplus_hook_call(chg, shutdown, true);
+	#endif /* CONFIG_OPLUS_CHARGER */
 }
+
+#ifdef CONFIG_OPLUS_CHARGER
+static int smb2_pm_resume(struct device *dev)
+{
+	struct smb2 *chip = dev_get_drvdata(dev);
+	struct smb_charger *chg;
+	int rc = 0;
+
+	if (!chip)
+		return 0;
+	chg = &chip->chg;
+	if (chg->oplus_hook && chg->oplus_hook->pm_resume)
+		rc = chg->oplus_hook->pm_resume(chg);
+	return rc;
+}
+
+static int smb2_pm_suspend(struct device *dev)
+{
+	struct smb2 *chip = dev_get_drvdata(dev);
+	struct smb_charger *chg;
+	int rc = 0;
+
+	if (!chip)
+		return 0;
+	chg = &chip->chg;
+	if (chg->oplus_hook && chg->oplus_hook->pm_suspend)
+		rc = chg->oplus_hook->pm_suspend(chg);
+	return rc;
+}
+
+static const struct dev_pm_ops smb2_pm_ops = {
+	.resume = smb2_pm_resume,
+	.suspend = smb2_pm_suspend,
+};
+#endif /* CONFIG_OPLUS_CHARGER */
 
 static const struct of_device_id match_table[] = {
 	{ .compatible = "qcom,qpnp-smb2", },
@@ -2638,6 +2929,9 @@ static struct platform_driver smb2_driver = {
 		.name		= "qcom,qpnp-smb2",
 		.owner		= THIS_MODULE,
 		.of_match_table	= match_table,
+		#ifdef CONFIG_OPLUS_CHARGER
+		.pm		= &smb2_pm_ops,
+		#endif /* CONFIG_OPLUS_CHARGER */
 	},
 	.probe		= smb2_probe,
 	.remove		= smb2_remove,

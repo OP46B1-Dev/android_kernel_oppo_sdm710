@@ -19,6 +19,14 @@
 #include <linux/regulator/consumer.h>
 #include <linux/extcon.h>
 #include "storm-watch.h"
+#ifdef CONFIG_OPLUS_CHARGER
+#include "../../oplus/oplus_smb_hook.h"
+
+/* OPLUS-added types; full def from <linux/pinctrl/consumer.h>. */
+struct pinctrl;
+struct pinctrl_state;
+struct apsd_result;
+#endif /* CONFIG_OPLUS_CHARGER */
 
 enum print_reason {
 	PR_INTERRUPT	= BIT(0),
@@ -385,6 +393,29 @@ struct smb_charger {
 	int			pulse_cnt;
 
 	int			die_health;
+
+	#ifdef CONFIG_OPLUS_CHARGER
+	/* ---- OPLUS extension: qcom->oplus hook + sdm670R platform data ----
+	 * Note: qcom's ufp_only_mode is left intact above; oplus reuses the
+	 * slot semantically as arb_monitor_enable, kept here as a separate
+	 * member to avoid touching upstream qcom logic.
+	 */
+	const struct oplus_smb_hook	*oplus_hook;
+
+	struct power_supply	*ac_psy;
+	bool			arb_monitor_enable;
+	struct delayed_work	arb_monitor_work;
+	struct delayed_work	chg_monitor_work;
+	struct delayed_work	typec_disable_cmd_work;
+	bool			fake_typec_insertion;
+	int			pre_current_ma;
+	int			charger_id_num;
+	struct delayed_work	divider_set_work;
+	struct pinctrl		*chg_2uart_pinctrl;
+	struct pinctrl_state	*chg_2uart_default;
+	struct pinctrl_state	*chg_2uart_sleep;
+	bool			oplus_works_initialized;
+	#endif /* CONFIG_OPLUS_CHARGER */
 };
 
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val);
@@ -554,6 +585,11 @@ int smblib_stat_sw_override_cfg(struct smb_charger *chg, bool override);
 void smblib_usb_typec_change(struct smb_charger *chg);
 int smblib_toggle_stat(struct smb_charger *chg, int reset);
 int smblib_force_ufp(struct smb_charger *chg);
+#ifdef CONFIG_OPLUS_CHARGER
+int smblib_get_prop_typec_mode(struct smb_charger *chg);
+const struct apsd_result *smblib_update_usb_type(struct smb_charger *chg);
+int smb2_init_usb_psy_for_oplus(struct smb_charger *chg);
+#endif /* CONFIG_OPLUS_CHARGER */
 
 int smblib_init(struct smb_charger *chg);
 int smblib_deinit(struct smb_charger *chg);

@@ -40,6 +40,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/pm_wakeup.h>
 #include <linux/power_supply.h>
+#include <linux/usb/oplus_dwc3.h>
 #include <linux/cdev.h>
 #include <linux/completion.h>
 #include <linux/msm-bus.h>
@@ -290,6 +291,11 @@ struct dwc3_msm {
 	bool			disable_host_mode_pm;
 	bool			use_pdc_interrupts;
 	enum dwc3_id_state	id_state;
+#ifdef CONFIG_OPLUS_CHARGER
+	/* Physical ID is retained while VOOC temporarily forces Sink Only. */
+	bool			sink_only;
+	bool			physical_id_ground;
+#endif
 	unsigned long		lpm_flags;
 #define MDWC3_SS_PHY_SUSPEND		BIT(0)
 #define MDWC3_ASYNC_IRQ_WAKE_CAPABILITY	BIT(1)
@@ -358,6 +364,12 @@ static void dwc3_msm_notify_event(struct dwc3 *dwc, unsigned int event,
 						unsigned int value);
 static int dwc3_restart_usb_host_mode(struct notifier_block *nb,
 					unsigned long event, void *ptr);
+
+#ifdef CONFIG_OPLUS_CHARGER
+static DEFINE_MUTEX(oplus_dwc3_lock);
+static struct dwc3_msm *oplus_dwc3;
+static bool oplus_dwc3_requested_sink_only;
+#endif
 
 /**
  *
@@ -3248,6 +3260,12 @@ static int dwc3_msm_id_notifier(struct notifier_block *nb,
 
 	id = event ? DWC3_ID_GROUND : DWC3_ID_FLOAT;
 
+#ifdef CONFIG_OPLUS_CHARGER
+	WRITE_ONCE(mdwc->physical_id_ground, !!event);
+	if (READ_ONCE(mdwc->sink_only))
+		id = DWC3_ID_FLOAT;
+#endif
+
 	dev_dbg(mdwc->dev, "host:%ld (id:%d) event received\n", event, id);
 
 	if (mdwc->id_state != id) {
@@ -3671,6 +3689,47 @@ static ssize_t usb_data_enabled_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(usb_data_enabled);
 
+#ifdef CONFIG_OPLUS_CHARGER
+int oplus_dwc3_set_sink_only(bool sink_only)
+{
+	struct dwc3_msm *mdwc;
+	struct dwc3 *dwc;
+	enum dwc3_id_state id;
+	bool notify;
+
+	mutex_lock(&oplus_dwc3_lock);
+	oplus_dwc3_requested_sink_only = sink_only;
+	mdwc = oplus_dwc3;
+	if (!mdwc) {
+		mutex_unlock(&oplus_dwc3_lock);
+		return sink_only ? -ENODEV : 0;
+	}
+
+	dwc = platform_get_drvdata(mdwc->dwc3);
+	if (!dwc) {
+		mutex_unlock(&oplus_dwc3_lock);
+		return -ENODEV;
+	}
+
+	WRITE_ONCE(mdwc->sink_only, sink_only);
+	id = !sink_only && READ_ONCE(mdwc->physical_id_ground) ?
+			DWC3_ID_GROUND : DWC3_ID_FLOAT;
+	notify = mdwc->id_state != id;
+	mdwc->id_state = id;
+
+	dev_info(mdwc->dev,
+		 "OPLUS Type-C sink_only=%d physical_id=%d effective_id=%d\n",
+		 sink_only, READ_ONCE(mdwc->physical_id_ground),
+		 mdwc->id_state);
+	if (notify && dwc->is_drd)
+		queue_work(mdwc->dwc3_wq, &mdwc->resume_work);
+	mutex_unlock(&oplus_dwc3_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(oplus_dwc3_set_sink_only);
+#endif
+
 static int dwc3_msm_probe(struct platform_device *pdev)
 {
 	struct device_node *node = pdev->dev.of_node, *dwc3_node;
@@ -3681,6 +3740,10 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 	struct resource *res;
 	void __iomem *tcsr;
 	bool host_mode;
+#ifdef CONFIG_OPLUS_CHARGER
+	bool extcon_vbus_active = false;
+	bool extcon_id_active = false;
+#endif
 	int ret = 0, i;
 	int ext_hub_reset_gpio;
 	u32 val;
@@ -3715,6 +3778,10 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 	}
 
 	mdwc->id_state = DWC3_ID_FLOAT;
+#ifdef CONFIG_OPLUS_CHARGER
+	mdwc->sink_only = false;
+	mdwc->physical_id_ground = false;
+#endif
 	set_bit(ID, &mdwc->inputs);
 
 	mdwc->charging_disabled = of_property_read_bool(node,
@@ -4016,7 +4083,35 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 	if (ret)
 		goto put_psy;
 
+#ifdef CONFIG_OPLUS_CHARGER
+	mutex_lock(&oplus_dwc3_lock);
+	mdwc->sink_only = oplus_dwc3_requested_sink_only;
+	oplus_dwc3 = mdwc;
+	mutex_unlock(&oplus_dwc3_lock);
+#endif
+
 	/* Update initial VBUS/ID state from extcon */
+#ifdef CONFIG_OPLUS_CHARGER
+	if (mdwc->extcon_vbus)
+		extcon_vbus_active = extcon_get_state(mdwc->extcon_vbus,
+						      EXTCON_USB) > 0;
+	if (mdwc->extcon_id)
+		extcon_id_active = extcon_get_state(mdwc->extcon_id,
+						    EXTCON_USB_HOST) > 0;
+
+	/* A powered dock may assert VBUS and USB_HOST at the same time. */
+	if (extcon_vbus_active)
+		dwc3_msm_vbus_notifier(&mdwc->vbus_nb, true, mdwc->extcon_vbus);
+	if (extcon_id_active)
+		dwc3_msm_id_notifier(&mdwc->id_nb, true, mdwc->extcon_id);
+	if (!extcon_vbus_active && !extcon_id_active && !pval.intval) {
+		/* USB cable is not connected */
+		schedule_delayed_work(&mdwc->sm_work, 0);
+	} else if (!extcon_vbus_active && !extcon_id_active &&
+		   pval.intval > 0) {
+		dev_info(mdwc->dev, "charger detection in progress\n");
+	}
+#else
 	if (mdwc->extcon_vbus && extcon_get_state(mdwc->extcon_vbus,
 							EXTCON_USB))
 		dwc3_msm_vbus_notifier(&mdwc->vbus_nb, true, mdwc->extcon_vbus);
@@ -4030,6 +4125,7 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 		if (pval.intval > 0)
 			dev_info(mdwc->dev, "charger detection in progress\n");
 	}
+#endif
 
 	device_create_file(&pdev->dev, &dev_attr_mode);
 	device_create_file(&pdev->dev, &dev_attr_speed);
@@ -4073,6 +4169,13 @@ static int dwc3_msm_remove(struct platform_device *pdev)
 	struct dwc3_msm	*mdwc = platform_get_drvdata(pdev);
 	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
 	int ret_pm;
+
+#ifdef CONFIG_OPLUS_CHARGER
+	mutex_lock(&oplus_dwc3_lock);
+	if (oplus_dwc3 == mdwc)
+		oplus_dwc3 = NULL;
+	mutex_unlock(&oplus_dwc3_lock);
+#endif
 
 	device_remove_file(&pdev->dev, &dev_attr_mode);
 	device_remove_file(&pdev->dev, &dev_attr_xhci_link_compliance);

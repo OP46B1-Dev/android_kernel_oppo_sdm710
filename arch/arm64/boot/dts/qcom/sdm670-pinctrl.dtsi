@@ -841,6 +841,34 @@
 					bias-pull-up;
 				};
 			};
+
+			qupv3_se10_i2c_pulldown: qupv3_se10_i2c_pulldown {
+				mux {
+					pins = "gpio55", "gpio56";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio55", "gpio56";
+					drive-strength = <2>;
+					bias-pull-down;
+					output-low;
+				};
+			};
+
+			qupv3_se10_i2c_pullup: qupv3_se10_i2c_pullup {
+				mux {
+					pins = "gpio55", "gpio56";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio55", "gpio56";
+					drive-strength = <2>;
+					bias-pull-up;
+					input-enable;
+				};
+			};
 		};
 
 		qupv3_se10_2uart_pins: qupv3_se10_2uart_pins {
