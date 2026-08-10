@@ -381,6 +381,7 @@ static void oplus_usb_plugin_removed(struct smb_charger *chg,
 		g_oplus_chip->charger_type = POWER_SUPPLY_TYPE_UNKNOWN;
 		oplus_chg_wake_update_work();
 	}
+	chg->pd_sdp = false;
 	chg->pre_current_ma = -1;
 	if (reset_apsd_rerun)
 		chg->uusb_apsd_rerun_done = false;
@@ -903,6 +904,34 @@ static int oplus_usb_use_present_status(struct smb_charger *chg)
 	       oplus_vooc_get_fastchg_ing();
 }
 
+/*
+ * A PD source that advertises USB Communications Capable must keep D+/D-
+ * on the AP/PHY. If the charger framework already classified it as DCP and
+ * started the VOOC probe, undo that probe before USB enumeration begins.
+ */
+static void oplus_pd_sdp_changed(struct smb_charger *chg, bool pd_sdp)
+{
+	struct oplus_chg_chip *oc = READ_ONCE(g_oplus_chip);
+
+	if (!oc || !pd_sdp || oc->pmic_spmi.chg != chg)
+		return;
+	if (oc->charger_type != POWER_SUPPLY_TYPE_USB_DCP ||
+	    chg->real_charger_type != POWER_SUPPLY_TYPE_USB_PD)
+		return;
+
+	chg_err("PD source has USB comm, restore D+/D- to AP\n");
+	oplus_chg_set_chargerid_switch_val(0);
+	oplus_vooc_switch_mode(NORMAL_CHARGER_MODE);
+	oplus_vooc_reset_mcu();
+	oplus_chg_clear_chargerid_info();
+	oc->charger_type = POWER_SUPPLY_TYPE_USB;
+	oc->real_charger_type = POWER_SUPPLY_TYPE_USB_PD;
+	oplus_smb_update_otg_policy();
+	oplus_chg_wake_update_work();
+	if (chg->usb_psy)
+		power_supply_changed(chg->usb_psy);
+}
+
 /* sdm670R.c:5266: guard power_supply_changed when dc_psy is NULL.
  * Return non-zero to skip the call. */
 static int oplus_dc_plugin_guard(struct smb_charger *chg)
@@ -965,6 +994,7 @@ const struct oplus_smb_hook oplus_smb_hooks = {
 	.usb_online_status		= oplus_usb_online_status,
 	.usb_get_property		= oplus_smb_usb_get_property,
 	.usb_use_present_status		= oplus_usb_use_present_status,
+	.pd_sdp_changed			= oplus_pd_sdp_changed,
 	.force_typec_sink		= oplus_force_typec_sink,
 	.dc_plugin_guard			= oplus_dc_plugin_guard,
 	.switcher_power_ok_storm	= oplus_switcher_power_ok_storm,

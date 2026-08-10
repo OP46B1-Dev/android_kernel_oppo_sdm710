@@ -2572,6 +2572,7 @@ int smblib_set_prop_pd_active(struct smb_charger *chg,
 		vote(chg->usb_icl_votable, SW_ICL_MAX_VOTER, true, SDP_100_MA);
 		vote(chg->usb_icl_votable, PD_VOTER, false, 0);
 		vote(chg->usb_irq_enable_votable, PD_VOTER, false, 0);
+		chg->pd_sdp = false;
 
 		/* PD hard resets failed, rerun apsd */
 		if (chg->ok_to_pd) {

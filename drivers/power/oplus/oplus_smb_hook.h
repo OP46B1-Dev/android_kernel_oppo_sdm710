@@ -142,6 +142,8 @@ struct oplus_smb_hook {
 	int  (*usb_get_property)(struct smb_charger *chg, int psp,
 				 union power_supply_propval *val);
 	int  (*usb_use_present_status)(struct smb_charger *chg);
+	/* PD source reported USB Communications Capable; drop VOOC if started. */
+	void (*pd_sdp_changed)(struct smb_charger *chg, bool pd_sdp);
 
 	/* Force Sink Only while the VOOC D+/D- path is active. */
 	int  (*force_typec_sink)(struct smb_charger *chg);

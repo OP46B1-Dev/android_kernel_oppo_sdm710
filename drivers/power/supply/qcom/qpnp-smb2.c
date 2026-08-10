@@ -385,6 +385,7 @@ static enum power_supply_property smb2_usb_props[] = {
 	POWER_SUPPLY_PROP_TYPEC_CC_ORIENTATION,
 	POWER_SUPPLY_PROP_PD_ALLOWED,
 	POWER_SUPPLY_PROP_PD_ACTIVE,
+	POWER_SUPPLY_PROP_PD_SDP,
 	POWER_SUPPLY_PROP_INPUT_CURRENT_SETTLED,
 	POWER_SUPPLY_PROP_INPUT_CURRENT_NOW,
 	POWER_SUPPLY_PROP_BOOST_CURRENT,
@@ -507,6 +508,9 @@ static int smb2_usb_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PD_ACTIVE:
 		val->intval = chg->pd_active;
 		break;
+	case POWER_SUPPLY_PROP_PD_SDP:
+		val->intval = chg->pd_sdp;
+		break;
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_SETTLED:
 		rc = smblib_get_prop_input_current_settled(chg, val);
 		break;
@@ -581,6 +585,7 @@ static int smb2_usb_set_prop(struct power_supply *psy,
 	struct smb2 *chip = power_supply_get_drvdata(psy);
 	struct smb_charger *chg = &chip->chg;
 	int rc = 0;
+	bool pd_sdp_changed = false;
 
 	mutex_lock(&chg->lock);
 	if (!chg->typec_present) {
@@ -606,6 +611,10 @@ static int smb2_usb_set_prop(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_PD_ACTIVE:
 		rc = smblib_set_prop_pd_active(chg, val);
+		break;
+	case POWER_SUPPLY_PROP_PD_SDP:
+		chg->pd_sdp = !!val->intval;
+		pd_sdp_changed = chg->pd_sdp;
 		break;
 	case POWER_SUPPLY_PROP_PD_IN_HARD_RESET:
 		rc = smblib_set_prop_pd_in_hard_reset(chg, val);
@@ -640,6 +649,8 @@ static int smb2_usb_set_prop(struct power_supply *psy,
 
 unlock:
 	mutex_unlock(&chg->lock);
+	if (pd_sdp_changed)
+		oplus_hook_call(chg, pd_sdp_changed, true);
 	return rc;
 }
 

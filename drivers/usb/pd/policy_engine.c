@@ -834,6 +834,10 @@ static int pd_eval_src_caps(struct usbpd *pd)
 	pd->peer_pr_swap = PD_SRC_PDO_FIXED_PR_SWAP(first_pdo);
 	pd->peer_dr_swap = PD_SRC_PDO_FIXED_DR_SWAP(first_pdo);
 
+	val.intval = pd->peer_usb_comm ? 1 : 0;
+	power_supply_set_property(pd->usb_psy,
+			POWER_SUPPLY_PROP_PD_SDP, &val);
+
 	val.intval = PD_SRC_PDO_FIXED_USB_SUSP(first_pdo);
 	power_supply_set_property(pd->usb_psy,
 			POWER_SUPPLY_PROP_PD_USB_SUSPEND_SUPPORTED, &val);
@@ -2196,6 +2200,9 @@ static void usbpd_sm(struct work_struct *w)
 		power_supply_set_property(pd->usb_psy,
 				POWER_SUPPLY_PROP_PD_USB_SUSPEND_SUPPORTED,
 				&val);
+
+		power_supply_set_property(pd->usb_psy,
+				POWER_SUPPLY_PROP_PD_SDP, &val);
 
 		power_supply_set_property(pd->usb_psy,
 				POWER_SUPPLY_PROP_PD_ACTIVE, &val);

@@ -2416,6 +2416,24 @@ int opchg_get_real_charger_type(void)
     return chg->real_charger_type;
 }
 
+/*
+ * A PD port is a USB SDP (data-capable host) when either the source
+ * capability advertises USB Communications Capable, or BC1.2 still found
+ * SDP before PD disabled APSD.  Such a port must never be handed to VOOC.
+ */
+static bool oplus_pd_sdp_detected(struct smb_charger *chg)
+{
+	u8 stat;
+
+	if (chg->pd_sdp)
+		return true;
+
+	if (smblib_read(chg, APSD_RESULT_STATUS_REG, &stat) < 0)
+		return false;
+
+	return (stat & APSD_RESULT_STATUS_MASK) == SDP_CHARGER_BIT;
+}
+
 int opchg_get_charger_type(void)
 {
 	u8 apsd_stat;
@@ -2439,8 +2457,12 @@ int opchg_get_charger_type(void)
 	}
 	chg_debug("APSD_STATUS = 0x%02x\n", apsd_stat);
 
-	if (!(apsd_stat & APSD_DTC_STATUS_DONE_BIT))
+	if (!(apsd_stat & APSD_DTC_STATUS_DONE_BIT)) {
+		if (chg->real_charger_type == POWER_SUPPLY_TYPE_USB_PD &&
+		    oplus_pd_sdp_detected(chg))
+			return POWER_SUPPLY_TYPE_USB;
 		return POWER_SUPPLY_TYPE_UNKNOWN;
+	}
 
 	if (chg->real_charger_type == POWER_SUPPLY_TYPE_USB
 			|| chg->real_charger_type == POWER_SUPPLY_TYPE_USB_CDP
@@ -2454,10 +2476,8 @@ int opchg_get_charger_type(void)
 	}
 
 	if (POWER_SUPPLY_TYPE_USB_PD == chg->real_charger_type) {
-		return POWER_SUPPLY_TYPE_USB_DCP;
-	}
-
-	if (POWER_SUPPLY_TYPE_USB_PD == chg->real_charger_type) {
+		if (oplus_pd_sdp_detected(chg))
+			return POWER_SUPPLY_TYPE_USB;
 		return POWER_SUPPLY_TYPE_USB_DCP;
 	}
 	return chg->real_charger_type;

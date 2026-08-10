@@ -331,6 +331,7 @@ struct smb_charger {
 	int			voltage_max_uv;
 	int			pd_active;
 	bool			system_suspend_supported;
+	bool			pd_sdp;
 	int			boost_threshold_ua;
 	int			system_temp_level;
 	int			thermal_levels;
