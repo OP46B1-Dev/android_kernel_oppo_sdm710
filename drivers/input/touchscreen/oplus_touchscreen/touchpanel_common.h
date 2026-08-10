@@ -17,9 +17,11 @@
 #include <linux/irq.h>
 #include <linux/jiffies.h>
 #include <linux/kthread.h>
+#include <linux/kobject.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
+#include <linux/sysfs.h>
 #include <linux/uaccess.h>
 #include <soc/oplus/device_info.h>
 #include "touchpanel_prevention.h"
@@ -73,6 +75,13 @@
 
 #define FINGERPRINT_DOWN_DETECT 0X0f
 #define FINGERPRINT_UP_DETECT 0X1f
+
+/*
+ * Screen-off gestures other than double tap are reported as
+ * KEY_GESTURE_START + gesture_type, matching the oplus touchscreen_v2
+ * convention used by vendor.lineage.touch HALs.
+ */
+#define KEY_GESTURE_START 246
 
 /* bit operation */
 #define SET_BIT(data, flag) ((data) |= (flag))
@@ -689,6 +698,7 @@ struct touchpanel_data {
     uint32_t irq_flags_cover; /*cover irq setting flag*/
 
     int gesture_enable; /*control state of black gesture*/
+    unsigned int gesture_enable_indep; /*independent per-gesture enable mask (bit N = type N)*/
 #if GESTURE_RATE_MODE
     int geature_ignore;
 #endif
@@ -871,6 +881,7 @@ struct oppo_touchpanel_operations {
     void (*get_gesture_coord)(void* chip_data, uint32_t gesture_type);
     void (*enable_fingerprint)(void* chip_data, uint32_t enable);
     void (*enable_gesture_mask)(void* chip_data, uint32_t enable);
+    void (*set_gesture_state)(void* chip_data, uint32_t state);
     void (*set_touch_direction)(void* chip_data, uint8_t dir);
     uint8_t (*get_touch_direction)(void* chip_data);
     void (*screenon_fingerprint_info)(

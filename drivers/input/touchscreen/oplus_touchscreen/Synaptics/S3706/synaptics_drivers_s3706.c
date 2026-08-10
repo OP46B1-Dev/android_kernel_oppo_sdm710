@@ -695,11 +695,34 @@ static int synaptics_enable_black_gesture(struct chip_data_s3706* chip_info, boo
 
     touch_i2c_write_block(chip_info->client, chip_info->reg_info.F12_2D_CTRL20, 3,
                           &(report_gesture_ctrl_buf[0x0]));
-    wakeup_gesture_enable_buf = 0xef; /* all kinds of gesture except triangle*/
+    wakeup_gesture_enable_buf = chip_info->gesture_mask;
     touch_i2c_write_byte(chip_info->client, chip_info->reg_info.F12_2D_CTRL27,
                          wakeup_gesture_enable_buf);
 
     return 0;
+}
+
+/*
+ * Translate the common driver per-gesture bitmask (bit N == gesture type N,
+ * see touchpanel_common.h) into the S3706 wakeup gesture enable mask
+ * (F12_2D_CTRL27) and store it. The mask is applied to the chip whenever
+ * MODE_GESTURE is entered (see synaptics_enable_black_gesture).
+ */
+static void synaptics_set_gesture_state(void* chip_data, uint32_t state) {
+    uint8_t gesture_mask = 0;
+    struct chip_data_s3706* chip_info = (struct chip_data_s3706*)chip_data;
+
+    if (state & (1 << DouTap)) gesture_mask |= ENABLE_DTAP;
+    if (state & ((1 << UpVee) | (1 << DownVee) | (1 << LeftVee) | (1 << RightVee)))
+        gesture_mask |= ENABLE_VEE;
+    if (state & (1 << Circle)) gesture_mask |= ENABLE_CIRCLE;
+    if (state & ((1 << DouSwip) | (1 << Left2RightSwip) | (1 << Right2LeftSwip) |
+                 (1 << Up2DownSwip) | (1 << Down2UpSwip)))
+        gesture_mask |= ENABLE_SWIPE;
+    if (state & ((1 << Mgestrue) | (1 << Wgestrue))) gesture_mask |= ENABLE_UNICODE;
+
+    chip_info->gesture_mask = gesture_mask;
+    TPD_INFO("%s: state = 0x%x, gesture_mask = 0x%x\n", __func__, state, gesture_mask);
 }
 
 static int synaptics_corner_limit_handle(struct chip_data_s3706* chip_info, bool enable) {
@@ -5900,6 +5923,7 @@ static struct oppo_touchpanel_operations synaptics_ops = {
         .get_face_state = synaptics_get_face_state,
         .enable_fingerprint = synaptics_enable_fingerprint_underscreen,
         .enable_gesture_mask = synaptics_enable_gesture_mask,
+        .set_gesture_state = synaptics_set_gesture_state,
         .set_touch_direction = synaptics_set_touch_direction,
         .get_touch_direction = synaptics_get_touch_direction,
         .screenon_fingerprint_info = synaptics_screenon_fingerprint_info,
@@ -5986,6 +6010,8 @@ static int synaptics_tp_probe(struct i2c_client* client, const struct i2c_device
     chip_info->touch_direction = VERTICAL_SCREEN;
     chip_info->is_fp_down = false;
     chip_info->force_update_needed = false;
+    chip_info->gesture_mask = ENABLE_DTAP | ENABLE_SWIPE | ENABLE_CIRCLE | ENABLE_VEE |
+                              ENABLE_UNICODE; /* all kinds of gesture except triangle */
 
     /*step4:file_operations callback binding*/
     ts->ts_ops = &synaptics_ops;

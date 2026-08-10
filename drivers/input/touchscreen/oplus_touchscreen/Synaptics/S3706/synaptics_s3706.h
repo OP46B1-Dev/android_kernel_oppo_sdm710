@@ -895,6 +895,7 @@ struct chip_data_s3706 {
     bool rt155_fdreplace_rt59_support;    // means fd RT59 test is replaced by RT155
     bool report_120hz_support;            // report point use >=120HZ
     unsigned long rotation_changed_time;  // remember rotation changed time
+    uint8_t gesture_mask;                 // wakeup gesture enable mask (F12_2D_CTRL27)
     struct monitor_data_v2* monitor_data_v2;
 };
 
